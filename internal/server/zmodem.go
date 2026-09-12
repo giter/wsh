@@ -166,13 +166,20 @@ func (z *zmSession) onHeader(typ byte, params [4]byte) {
 		switch typ {
 		case zRQINIT:
 			// Remote sz: we become the receiver and announce readiness.
+			// ZRQINIT is only ever sent by the sender (sz); rz announces
+			// itself with ZRINIT instead.
 			z.stateMu.Lock()
 			z.mode = zmModeRecv
 			z.stateMu.Unlock()
 			log.Printf("zmodem: detected remote sz, receiving (session %s)", z.ws.id)
 			_ = zmWriteHexHeader(z.ws.stdin, zRINIT, zmCANFDX|zmCANOVIO, 0, 0, 0, true)
+			// Direction is now known: dismiss any pending upload banner.
+			z.push(zmodemMsg{Type: "zmodem.download-start", SessionID: z.ws.id})
 		case zRINIT:
 			// Remote rz: we become the sender; ask the browser for a file.
+			// lrzsz's rz prints its banner and immediately sends a ZRINIT
+			// hex frame ("**B0100000023be50"), which announces it is ready
+			// to receive our upload.
 			z.stateMu.Lock()
 			z.mode = zmModeSend
 			z.stateMu.Unlock()

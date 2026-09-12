@@ -135,8 +135,12 @@ function promptPassword(message, callback) {
 // gesture (the WebSocket push itself is not one), so we surface a button
 // instead of calling input.click() directly.
 function showZmodemBar(sessionId) {
+    console.log("[zmodem] showZmodemBar sessionId =", sessionId);
     const t = Tabs.bySession(sessionId);
-    if (!t || !t.page) return;
+    if (!t || !t.page) {
+        console.log("[zmodem] !!! no tab/page found for session", sessionId);
+        return;
+    }
     const old = t.page.querySelector(".zmodem-bar");
     if (old) old.remove();
 
@@ -145,27 +149,43 @@ function showZmodemBar(sessionId) {
     const label = document.createElement("span");
     label.textContent = "远端 rz 正在等待接收文件";
     const pick = button("btn primary", "选择文件…", () => {
+        console.log("[zmodem] 用户点击“选择文件…”，准备打开文件选择框");
         const input = document.createElement("input");
         input.type = "file";
         input.onchange = async () => {
             const file = input.files[0];
             if (!file) return;
+            console.log("[zmodem] 已选择文件:", file.name, file.size);
             bar.remove();
             if (t.term) t.term.writeln(`\r\n\x1b[90m[正在发送 ${file.name} …]\x1b[0m`);
             try {
-                const buf = await file.arrayBuffer();
-                await RPC.call("zmodem.send", {
+                // 分块上传：避免把整个文件 base64 后塞进单条 WebSocket 消息，
+                // 大文件在 WebView2 里会卡住。每块 1 MiB。
+                const CHUNK = 1 << 20;
+                const total = Math.ceil(file.size / CHUNK);
+                await RPC.call("zmodem.sendBegin", {
                     sessionId,
                     name: file.name,
                     size: file.size,
-                    data: base64Encode(buf),
                 });
+                for (let i = 0; i < total; i++) {
+                    const slice = file.slice(i * CHUNK, Math.min((i + 1) * CHUNK, file.size));
+                    const buf = await slice.arrayBuffer();
+                    await RPC.call("zmodem.sendChunk", {
+                        sessionId,
+                        index: i,
+                        data: base64Encode(buf),
+                    });
+                }
+                await RPC.call("zmodem.sendEnd", { sessionId });
                 if (t.term) t.term.writeln("\r\n\x1b[90m[发送中，等待远端完成…]\x1b[0m");
             } catch (e) {
+                console.log("[zmodem] 发送失败:", e);
                 if (t.term) t.term.writeln(`\r\n\x1b[90m[发送失败：${e.message}]\x1b[0m`);
             }
         };
         input.click(); // within a user gesture
+        console.log("[zmodem] input.click() 已调用");
     });
     const cancel = button("btn", "取消", () => {
         bar.remove();

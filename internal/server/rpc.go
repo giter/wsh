@@ -29,9 +29,11 @@ var router = map[string]handler{
 	"terminal.resize": (*Server).handleTerminalResize,
 	"terminal.close":  (*Server).handleTerminalClose,
 
-	// zmodem (lrzsz)
-	"zmodem.send":   (*Server).handleZmodemSend,
-	"zmodem.cancel": (*Server).handleZmodemCancel,
+	// zmodem (lrzsz) — chunked upload (sendBegin/sendChunk/sendEnd)
+	"zmodem.sendBegin": (*Server).handleZmodemSendBegin,
+	"zmodem.sendChunk": (*Server).handleZmodemSendChunk,
+	"zmodem.sendEnd":   (*Server).handleZmodemSendEnd,
+	"zmodem.cancel":    (*Server).handleZmodemCancel,
 
 	// sftp
 	"fs.list":       (*Server).handleFsList,

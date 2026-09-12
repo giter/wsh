@@ -234,8 +234,10 @@ func (p *zmParser) Feed(b byte) {
 	case psHexCRC:
 		if v, ok := zmHexVal(b); ok {
 			p.hex = append(p.hex, v)
-			if len(p.hex) == 2 {
-				p.crc = uint16(p.hex[0])<<8 | uint16(p.hex[1])
+			if len(p.hex) == 4 {
+				// Hex CRC is two bytes (four hex digits), e.g. "be50".
+				p.crc = uint16(p.hex[0])<<12 | uint16(p.hex[1])<<8 |
+					uint16(p.hex[2])<<4 | uint16(p.hex[3])
 				p.hex = p.hex[:0]
 				p.state = psHexCRLF
 			}

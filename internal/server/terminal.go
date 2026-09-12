@@ -39,6 +39,12 @@ type WebSession struct {
 	zmMu             sync.Mutex
 	zm               *zmSession
 	zmUploadPrompted bool
+
+	// Chunked upload accumulation (zmodem.sendBegin / sendChunk / sendEnd).
+	// Guarded by zmMu.
+	uploadName string
+	uploadSize int
+	uploadData []byte
 }
 
 type openTerminalParams struct {
@@ -156,6 +162,21 @@ func (ws *WebSession) readLoop(stdout io.Reader) {
 // triggers an upload prompt (rz waits for our ZRQINIT instead of sending a
 // frame itself), while a ZMODEM frame header (remote sz) starts a download.
 func (ws *WebSession) routeOutput(chunk []byte) {
+	// Upload: remote rz printed its banner and is waiting for our ZRQINIT.
+	// Check before frame detection: lrzsz's rz prints the banner and its
+	// ZRINIT frame in one burst, which the frame branch below would swallow
+	// entirely. The prompt is idempotent (an extra push only rebuilds the
+	// banner UI in the browser).
+	ws.zmMu.Lock()
+	prompted := ws.zmUploadPrompted
+	ws.zmMu.Unlock()
+	if !prompted && bytes.Contains(chunk, []byte("rz waiting to receive")) {
+		ws.zmMu.Lock()
+		ws.zmUploadPrompted = true
+		ws.zmMu.Unlock()
+		ws.pushMsg(zmodemMsg{Type: "zmodem.send-file", SessionID: ws.id})
+	}
+
 	ws.zmMu.Lock()
 	zm := ws.zm
 	ws.zmMu.Unlock()
@@ -167,25 +188,16 @@ func (ws *WebSession) routeOutput(chunk []byte) {
 		z := startZmSession(ws)
 		ws.zmMu.Lock()
 		ws.zm = z
-		ws.zmUploadPrompted = false
 		ws.zmMu.Unlock()
-		// A transfer frame arrived (remote sz); dismiss any upload banner.
-		ws.pushMsg(zmodemMsg{Type: "zmodem.download-start", SessionID: ws.id})
+		// Direction is decided by onHeader once the first frame is parsed:
+		// ZRQINIT (remote sz) -> download-start, ZRINIT (remote rz) -> the
+		// upload banner. We must NOT dismiss the banner here, because rz also
+		// sends a ZRINIT frame right after its banner.
 		if idx > 0 {
 			ws.pushOutput(chunk[:idx])
 		}
 		z.feed(chunk[idx:])
 		return
-	}
-	// Upload: remote rz printed its banner and is waiting for our ZRQINIT.
-	ws.zmMu.Lock()
-	prompted := ws.zmUploadPrompted
-	ws.zmMu.Unlock()
-	if !prompted && bytes.Contains(chunk, []byte("rz waiting to receive")) {
-		ws.zmMu.Lock()
-		ws.zmUploadPrompted = true
-		ws.zmMu.Unlock()
-		ws.pushMsg(zmodemMsg{Type: "zmodem.send-file", SessionID: ws.id})
 	}
 	ws.pushOutput(chunk)
 }
@@ -336,15 +348,52 @@ func needsPassword(err error) bool {
 	return false
 }
 
-// handleZmodemSend delivers a browser-selected file for an rz upload. If no
-// transfer is running yet (rz only printed its banner), a fresh sender
-// session is started and prods rz with ZRQINIT. The data is base64-encoded.
-func (s *Server) handleZmodemSend(c *wsClient, params json.RawMessage) (interface{}, error) {
+// sendZmFile delivers a fully assembled upload file to the transfer session.
+// If no transfer is running yet (rz only printed its banner), a fresh sender
+// session is started and prods rz with ZRQINIT. Shared by the chunked upload
+// handlers (sendEnd) and the legacy single-shot path.
+func (s *Server) sendZmFile(ws *WebSession, f zmFile) error {
+	ws.zmMu.Lock()
+	zm := ws.zm
+	if zm != nil && zm.active() {
+		ws.zmMu.Unlock()
+		if zm.sendable() {
+			select {
+			case zm.fileCh <- f:
+				return nil
+			case <-zm.done:
+				return fmt.Errorf("传输已结束")
+			}
+		}
+		// The session is alive but its direction was never resolved (the
+		// remote rz ZRINIT frame may have been split across output chunks).
+		// Re-arm it as the sender and prod rz with ZRQINIT.
+		zm.stateMu.Lock()
+		mode := zm.mode
+		zm.stateMu.Unlock()
+		if mode != zmModeUnknown {
+			return fmt.Errorf("当前会话未在等待文件")
+		}
+		zm.presetSend(f)
+		return nil
+	}
+	// No active transfer: rz is waiting on its banner; start a sender session
+	// that answers with ZRQINIT and streams the file once rz replies ZRINIT.
+	zm = startZmSession(ws)
+	zm.presetSend(f)
+	ws.zm = zm
+	ws.zmUploadPrompted = false
+	ws.zmMu.Unlock()
+	return nil
+}
+
+// handleZmodemSendBegin starts a chunked upload: records file metadata and
+// resets the accumulation buffer.
+func (s *Server) handleZmodemSendBegin(c *wsClient, params json.RawMessage) (interface{}, error) {
 	var p struct {
 		SessionID string `json:"sessionId"`
 		Name      string `json:"name"`
 		Size      int    `json:"size"`
-		Data      string `json:"data"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -356,33 +405,63 @@ func (s *Server) handleZmodemSend(c *wsClient, params json.RawMessage) (interfac
 	if !ok {
 		return nil, fmt.Errorf("会话不存在")
 	}
+	ws.zmMu.Lock()
+	ws.uploadName = p.Name
+	ws.uploadSize = p.Size
+	ws.uploadData = nil
+	ws.zmMu.Unlock()
+	return nil, nil
+}
+
+// handleZmodemSendChunk appends one base64-encoded chunk to the upload buffer.
+// Chunks arrive in order because the browser awaits each RPC before sending
+// the next one.
+func (s *Server) handleZmodemSendChunk(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		SessionID string `json:"sessionId"`
+		Index     int    `json:"index"`
+		Data      string `json:"data"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	ws, ok := s.session(p.SessionID)
+	if !ok {
+		return nil, fmt.Errorf("会话不存在")
+	}
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
 		return nil, fmt.Errorf("文件数据解码失败")
 	}
-	f := zmFile{name: p.Name, size: p.Size, data: data}
-
 	ws.zmMu.Lock()
-	zm := ws.zm
-	if zm != nil && zm.active() {
-		ws.zmMu.Unlock()
-		if !zm.sendable() {
-			return nil, fmt.Errorf("当前会话未在等待文件")
-		}
-		select {
-		case zm.fileCh <- f:
-			return nil, nil
-		case <-zm.done:
-			return nil, fmt.Errorf("传输已结束")
-		}
-	}
-	// No active transfer: rz is waiting on its banner; start a sender session
-	// that answers with ZRQINIT and streams the file once rz replies ZRINIT.
-	zm = startZmSession(ws)
-	zm.presetSend(f)
-	ws.zm = zm
-	ws.zmUploadPrompted = false
+	ws.uploadData = append(ws.uploadData, data...)
 	ws.zmMu.Unlock()
+	return nil, nil
+}
+
+// handleZmodemSendEnd finalizes the upload: assembles zmFile and hands it to
+// the transfer session.
+func (s *Server) handleZmodemSendEnd(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	ws, ok := s.session(p.SessionID)
+	if !ok {
+		return nil, fmt.Errorf("会话不存在")
+	}
+	ws.zmMu.Lock()
+	f := zmFile{name: ws.uploadName, size: ws.uploadSize, data: ws.uploadData}
+	ws.uploadData = nil
+	ws.zmMu.Unlock()
+	if f.name == "" {
+		return nil, fmt.Errorf("请先调用 sendBegin")
+	}
+	if err := s.sendZmFile(ws, f); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 

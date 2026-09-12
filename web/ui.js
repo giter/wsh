@@ -73,6 +73,7 @@ function base64Decode(b64) {
     return bytes;
 }
 function triggerDownload(name, bytes) {
+    console.log("[zmodem] triggerDownload:", name, bytes && bytes.length);
     const blob = new Blob([bytes]);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -82,4 +83,5 @@ function triggerDownload(name, bytes) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    console.log("[zmodem] 下载已触发（a.click 完成）");
 }

@@ -45,6 +45,9 @@ const RPC = {
 
     // Inbound pushes from the backend (terminal output / exit).
     handlePush(msg) {
+        if (msg.type && msg.type.indexOf("zmodem") === 0) {
+            console.log("[zmodem] push:", JSON.stringify(msg));
+        }
         if (msg.type === "terminal.data") {
             const t = Tabs.bySession(msg.sessionId);
             if (!t) return;
