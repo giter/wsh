@@ -33,6 +33,8 @@ func configFile() (string, error) {
 type Store struct {
 	connections []*Connection
 	tunnels     []*Tunnel
+	folders     []*Folder
+	settings    Settings
 	path        string
 	dirty       bool
 }
@@ -43,7 +45,7 @@ func NewStore() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{path: path}
+	s := &Store{path: path, settings: defaultSettings()}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -55,6 +57,7 @@ func NewStore() (*Store, error) {
 	type disk struct {
 		Connections []*Connection `json:"connections"`
 		Tunnels     []*Tunnel     `json:"tunnels"`
+		Folders     []*Folder     `json:"folders"`
 	}
 	var d disk
 	if err := json.Unmarshal(raw, &d); err != nil {
@@ -62,7 +65,62 @@ func NewStore() (*Store, error) {
 	}
 	s.connections = d.Connections
 	s.tunnels = d.Tunnels
+	s.folders = d.Folders
+
+	// Settings live in their own file so global options can be edited
+	// without touching connection state.
+	if err := s.loadSettings(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	return s, nil
+}
+
+// defaultSettings returns the settings used when no settings.json exists.
+func defaultSettings() Settings {
+	return Settings{Theme: "dark"}
+}
+
+// settingsFile is the path to the global options JSON file.
+func settingsFile() (string, error) {
+	dir, err := configDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "settings.json"), nil
+}
+
+func (s *Store) loadSettings() error {
+	path, err := settingsFile()
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var st Settings
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	s.settings = st
+	return nil
+}
+
+// Settings returns the current global options.
+func (s *Store) Settings() Settings { return s.settings }
+
+// UpdateSettings persists the given global options to settings.json.
+func (s *Store) UpdateSettings(st Settings) error {
+	s.settings = st
+	path, err := settingsFile()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
 }
 
 // Save writes state to disk when something changed.
@@ -73,8 +131,9 @@ func (s *Store) Save() error {
 	type disk struct {
 		Connections []*Connection `json:"connections"`
 		Tunnels     []*Tunnel     `json:"tunnels"`
+		Folders     []*Folder     `json:"folders"`
 	}
-	d := disk{Connections: s.connections, Tunnels: s.tunnels}
+	d := disk{Connections: s.connections, Tunnels: s.tunnels, Folders: s.folders}
 	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
@@ -170,6 +229,50 @@ func (s *Store) DeleteTunnel(id string) error {
 		}
 	}
 	s.tunnels = kept
+	s.mark()
+	return s.Save()
+}
+
+// Folders returns a copy of the folder slice.
+func (s *Store) Folders() []*Folder {
+	out := make([]*Folder, len(s.folders))
+	copy(out, s.folders)
+	return out
+}
+
+// AddFolder inserts a new folder and persists.
+func (s *Store) AddFolder(f *Folder) error {
+	s.folders = append(s.folders, f)
+	s.mark()
+	return s.Save()
+}
+
+// UpdateFolder replaces a folder by ID.
+func (s *Store) UpdateFolder(f *Folder) error {
+	for i, existing := range s.folders {
+		if existing.ID == f.ID {
+			s.folders[i] = f
+			s.mark()
+			return s.Save()
+		}
+	}
+	return errors.New("folder not found")
+}
+
+// DeleteFolder removes a folder by ID and ungroups any connections inside it.
+func (s *Store) DeleteFolder(id string) error {
+	kept := s.folders[:0]
+	for _, f := range s.folders {
+		if f.ID != id {
+			kept = append(kept, f)
+		}
+	}
+	s.folders = kept
+	for _, c := range s.connections {
+		if c.FolderID == id {
+			c.FolderID = ""
+		}
+	}
 	s.mark()
 	return s.Save()
 }
