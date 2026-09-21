@@ -5,12 +5,13 @@
 #   ./build.sh             # 默认构建 Windows 版 wsh.exe（交叉编译）
 #   ./build.sh windows     # 同上
 #   ./build.sh darwin      # 打包 macOS 版 wsh.app（必须在 macOS 上运行）
+#   ./build.sh dmg         # 在 darwin 的基础上再打一个 wsh.dmg 发行镜像（必须在 macOS 上运行）
 #
 # 依赖：
 #   前端（两者都需要）：bun，见 frontend/
 #   Windows 交叉编译（Debian/Ubuntu）：
 #     sudo apt install gcc-mingw-w64-x86-64
-#    macOS 打包：Xcode Command Line Tools（clang / sips / iconutil）
+#    macOS 打包：Xcode Command Line Tools（clang / sips / iconutil）+ 系统自带 hdiutil
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -71,13 +72,19 @@ icon_128x128.png:128 icon_128x128@2x.png:256 \
 icon_256x256.png:256 icon_256x256@2x.png:512 \
 icon_512x512.png:512 icon_512x512@2x.png:1024"
 
+  local status=0
   for entry in $spec; do
     size="${entry##*:}"
-    sips -z "$size" "$size" "$src" --out "$iconset/${entry%%:*}" >/dev/null
+    sips -z "$size" "$size" "$src" --out "$iconset/${entry%%:*}" >/dev/null \
+      || status=1
   done
 
-  iconutil -c icns "$iconset" -o "$dest"
+  iconutil -c icns "$iconset" -o "$dest" || status=1
+
+  # 必须先记录成败再清理：函数返回值取自最后一条命令，
+  # 若让 rm -rf 收尾，iconutil 的失败会被它的成功状态掩盖掉。
   rm -rf "$work"
+  return "$status"
 }
 
 # 打包 macOS .app：CGO 链接 Cocoa / WebKit，无法从其它平台交叉编译，
@@ -149,21 +156,51 @@ PLIST
   fi
   xattr -cr "$app" 2>/dev/null || true
 
-  echo ">> 完成：$app（双击运行，或 open $app）"
+  echo ">> 完成：${app}（双击运行，或 open ${app}）"
+}
+
+# 打包 macOS 发行镜像 wsh.dmg：镜像内是 wsh.app 加一个指向 /Applications 的
+# 快捷方式，双击挂载后把应用拖进 Applications 即可安装。
+build_dmg() {
+  build_darwin
+
+  local app="wsh.app" out="wsh.dmg" volname="wsh"
+  local work
+  work="$(mktemp -d)"
+
+  echo ">> 组装 $out ..."
+  # ditto 会连同扩展属性一起复制，保证 ad-hoc 签名在拷贝后依然有效。
+  if command -v ditto >/dev/null 2>&1; then
+    ditto "$app" "$work/$app"
+  else
+    cp -R "$app" "$work/$app"
+  fi
+  ln -s /Applications "$work/Applications"
+
+  # UDZO = 压缩只读镜像；-ov 允许覆盖旧文件。
+  if ! hdiutil create -volname "$volname" -srcfolder "$work" -ov \
+    -format UDZO "$out" >/dev/null; then
+    rm -rf "$work"
+    echo "错误：hdiutil 创建 $out 失败" >&2
+    return 1
+  fi
+  rm -rf "$work"
+
+  echo ">> 完成：${out}（双击挂载，把 ${app} 拖入 Applications）"
 }
 
 case "$TARGET" in
   windows) ;;
-  darwin)
+  darwin|dmg)
     # 提前报错，避免在非 macOS 上白白跑一遍前端构建。
     if [ "$(uname -s)" != "Darwin" ]; then
-      echo "错误：darwin 打包需要 CGO 链接 Cocoa / WebKit，只能在 macOS 上运行。" >&2
-      echo "      请在 macOS 上执行 ./build.sh darwin" >&2
+      echo "错误：$TARGET 打包需要 CGO 链接 Cocoa / WebKit，只能在 macOS 上运行。" >&2
+      echo "      请在 macOS 上执行 ./build.sh $TARGET" >&2
       exit 1
     fi
     ;;
   *)
-    echo "用法：$0 [windows|darwin]" >&2
+    echo "用法：$0 [windows|darwin|dmg]" >&2
     exit 1
     ;;
 esac
