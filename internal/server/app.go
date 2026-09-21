@@ -15,9 +15,16 @@ type AppActions struct {
 	OpenTunnels  func()
 	Quit         func()
 	OpenDevTools func()
+	// SetZoom applies a webview zoom factor (1.0 = 100%) to the named window.
+	SetZoom func(window string, factor float64)
 	// WindowControl performs an action on the named window and returns an
 	// action-specific result (e.g. the maximise state for "is-maximised").
 	WindowControl func(window, action string) interface{}
+	// SetLatinInput switches the OS input method of the named window to its
+	// Latin/English mode, so a credential prompt starts out accepting ASCII
+	// instead of whatever IME the user had active. Best-effort and Windows-only;
+	// a no-op elsewhere.
+	SetLatinInput func(window string)
 }
 
 // SetAppActions installs the desktop-shell callbacks. It should be called before
@@ -29,6 +36,9 @@ func (s *Server) SetAppActions(a AppActions) { s.actions = a }
 func (s *Server) handleAppAction(c *wsClient, params json.RawMessage) (interface{}, error) {
 	var p struct {
 		Action string `json:"action"`
+		// Window is read by the "zoom" and "ime-latin" actions, Zoom only by "zoom".
+		Window string  `json:"window"`
+		Zoom   float64 `json:"zoom"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -55,6 +65,18 @@ func (s *Server) handleAppAction(c *wsClient, params json.RawMessage) (interface
 		return nil, run(s.actions.Quit)
 	case "devtools":
 		return nil, run(s.actions.OpenDevTools)
+	case "zoom":
+		if s.actions.SetZoom == nil {
+			return nil, fmt.Errorf("无窗口模式下不可用")
+		}
+		s.actions.SetZoom(p.Window, p.Zoom)
+		return nil, nil
+	case "ime-latin":
+		if s.actions.SetLatinInput == nil {
+			return nil, fmt.Errorf("无窗口模式下不可用")
+		}
+		s.actions.SetLatinInput(p.Window)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("未知操作：%s", p.Action)
 	}

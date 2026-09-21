@@ -96,6 +96,10 @@ export default function TitleBar() {
         {
             label: "视图",
             items: [
+                { label: "放大", accel: "Ctrl++", run: () => app.zoomFont(1) },
+                { label: "缩小", accel: "Ctrl+-", run: () => app.zoomFont(-1) },
+                { label: "重置缩放", accel: "Ctrl+0", run: () => app.resetZoom() },
+                { sep: true },
                 { label: "会话管理器", accel: "Ctrl+1", run: () => app.appAction("sessions") },
                 { label: "文件传输", accel: "Ctrl+2", run: () => app.appAction("sftp") },
                 { label: "端口隧道", accel: "Ctrl+3", run: () => app.appAction("tunnels") },

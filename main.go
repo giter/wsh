@@ -108,6 +108,7 @@ func main() {
 		Height:             800,
 		MinWidth:           800,
 		MinHeight:          600,
+		Zoom:               zoomFor(store),
 		// The "?win=" param tells the frontend which window it is, so its title
 		// bar can drive the right window over RPC.
 		URL:              url + "?win=main",
@@ -142,6 +143,7 @@ func main() {
 					Name: "settings", Title: "选项",
 					Width: 560, Height: 660, MinWidth: 380, MinHeight: 420,
 					Dark: isDarkTheme(store),
+					Zoom: zoomFor(store),
 				})
 			})
 		},
@@ -151,6 +153,7 @@ func main() {
 					Name: "keys", Title: "密钥管理",
 					Width: 820, Height: 680, MinWidth: 380, MinHeight: 420,
 					Dark: isDarkTheme(store),
+					Zoom: zoomFor(store),
 				})
 			})
 		},
@@ -160,6 +163,7 @@ func main() {
 					Name: "sftp", Title: "文件传输",
 					Width: 900, Height: 620, MinWidth: 560, MinHeight: 400,
 					Dark: isDarkTheme(store),
+					Zoom: zoomFor(store),
 				})
 			})
 		},
@@ -169,12 +173,25 @@ func main() {
 					Name: "tunnels", Title: "端口隧道",
 					Width: 760, Height: 560, MinWidth: 480, MinHeight: 360,
 					Dark: isDarkTheme(store),
+					Zoom: zoomFor(store),
 				})
 			})
 		},
 		Quit: func() { application.InvokeAsync(func() { app.Quit() }) },
 		OpenDevTools: func() {
 			application.InvokeAsync(func() { win.OpenDevTools() })
+		},
+		// SetZoom applies the web UI's zoom to one window. Each window zooms itself
+		// when it applies settings, so the zoom follows the user across windows
+		// without the backend tracking it per window.
+		SetZoom: func(name string, factor float64) {
+			application.InvokeAsync(func() {
+				// GetByName returns false once a window has been closed, so a stale
+				// request can never touch a destroyed window.
+				if w, ok := app.Window.GetByName(name); ok {
+					w.SetZoom(factor)
+				}
+			})
 		},
 		WindowControl: func(name, action string) interface{} {
 			var result interface{}
@@ -197,6 +214,16 @@ func main() {
 				}
 			})
 			return result
+		},
+		// SetLatinInput leaves the OS input method in its English mode so a
+		// passphrase prompt is typed as ASCII; the IME is per-window state that
+		// only the native side can reach.
+		SetLatinInput: func(name string) {
+			application.InvokeAsync(func() {
+				if w, ok := app.Window.GetByName(name); ok {
+					switchToLatinInput(w.NativeWindow())
+				}
+			})
 		},
 	})
 
@@ -296,6 +323,9 @@ type toolWindow struct {
 	MinWidth  int
 	MinHeight int
 	Dark      bool
+	// Zoom is the saved UI zoom factor, applied at creation so a new window opens
+	// at the user's zoom instead of flashing at 100% first.
+	Zoom float64
 }
 
 // openToolWindow opens (or focuses) an auxiliary window. The web frontend picks
@@ -318,6 +348,7 @@ func openToolWindow(app *application.App, baseURL string, tw toolWindow) {
 		Height:    tw.Height,
 		MinWidth:  tw.MinWidth,
 		MinHeight: tw.MinHeight,
+		Zoom:      tw.Zoom,
 		// Tool windows keep the chrome minimal: no menu bar, so the per-window
 		// menu is not duplicated on Windows/Linux.
 		UseApplicationMenu: false,
@@ -336,6 +367,21 @@ func openToolWindow(app *application.App, baseURL string, tw toolWindow) {
 // isDarkTheme reports whether the saved app theme is dark (the default).
 func isDarkTheme(store *storage.Store) bool {
 	return store.Settings().Theme != "light"
+}
+
+// zoomFor maps the saved UI size to the webview zoom factor used when a window is
+// created (uiBasePx is 100%). Values outside the supported range fall back to
+// 100%, matching what the options window accepts.
+func zoomFor(store *storage.Store) float64 {
+	const (
+		uiBasePx = 13
+		uiMaxPx  = 32
+	)
+	px := store.Settings().FontSize
+	if px < uiBasePx || px > uiMaxPx {
+		px = uiBasePx
+	}
+	return float64(px) / uiBasePx
 }
 
 // appBackground is the app's background colour for the current theme, applied

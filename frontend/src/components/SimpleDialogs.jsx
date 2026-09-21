@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
+import { requestLatinInput } from "../state/store.jsx";
 
 // Small, reusable dialogs: confirm, text prompt, password prompt, notice and
 // the About box.
@@ -91,6 +92,11 @@ export function PromptDialog({ title, label, initial = "", onSubmit, onClose }) 
 
 export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
     const [pw, setPw] = useState("");
+    // A password is typed as plain ASCII, so start the IME in English rather than
+    // whatever composition mode was left active elsewhere in the UI.
+    useEffect(() => {
+        requestLatinInput();
+    }, []);
     const submit = () => {
         onClose();
         onSubmit(pw);
@@ -137,6 +143,11 @@ export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
 // user opts in from the key manager.
 export function PassphraseDialog({ message, onSubmit, onClose, onCancel }) {
     const [pw, setPw] = useState("");
+    // An SSH passphrase is typed as plain ASCII, so start the IME in English
+    // rather than whatever composition mode was left active elsewhere in the UI.
+    useEffect(() => {
+        requestLatinInput();
+    }, []);
     const submit = () => {
         onClose();
         onSubmit(pw);

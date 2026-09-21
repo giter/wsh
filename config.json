@@ -1,0 +1,1216 @@
+{
+  "connections": [
+    {
+      "id": "e851b5148954835c",
+      "name": "华自永航",
+      "host": "139.9.177.77",
+      "port": 22,
+      "user": "root",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "8d952940a1f8a2a1",
+      "name": "南方智慧水务",
+      "host": "47.110.47.180",
+      "port": 22,
+      "user": "root",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "9ff26a822bd51f1c",
+      "name": "南通松达",
+      "host": "47.116.136.159",
+      "port": 22,
+      "user": "root",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "573a465da23fd756",
+      "name": "厦门信控",
+      "host": "47.98.153.240",
+      "port": 22,
+      "user": "root",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "b21a1083f33c1533",
+      "name": "嘉兴燃气（调度）",
+      "host": "10.200.0.3",
+      "port": 22,
+      "user": "root",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "576f4f7421b7d473",
+      "name": "天津泰达",
+      "host": "111.30.78.67",
+      "port": 10003,
+      "user": "root",
+      "order": 5,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "1be53a8e097d7e79",
+      "name": "杭州烔丰",
+      "host": "114.55.30.59",
+      "port": 22,
+      "user": "root",
+      "order": 6,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "a0e08ab2c4ff5530",
+      "name": "江南水务",
+      "host": "172.168.27.241",
+      "port": 23232,
+      "user": "root",
+      "order": 7,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "05b37563f99ac6bd",
+      "name": "清华环境研究院",
+      "host": "182.92.131.185",
+      "port": 22,
+      "user": "root",
+      "order": 8,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5eefc2b2eeb5a22c",
+      "name": "绍兴水务学习强企",
+      "host": "60.190.213.242",
+      "port": 44444,
+      "user": "root",
+      "order": 9,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "be7203b9806add2c",
+      "name": "致辉测控",
+      "host": "8.153.101.42",
+      "port": 22,
+      "user": "root",
+      "order": 10,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "982638517eb4030f",
+      "name": "解放汽车（中转）",
+      "host": "47.100.116.77",
+      "port": 22,
+      "user": "root",
+      "order": 11,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "bafd203c17809b50",
+      "name": "上海旗霄阿里云",
+      "host": "47.101.167.171",
+      "port": 22,
+      "user": "root",
+      "folder_id": "65ef34d506714920",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "660cb627edc417d2",
+      "name": "上海沪翔",
+      "host": "10.200.0.45",
+      "port": 22,
+      "user": "root",
+      "folder_id": "65ef34d506714920",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "89b24f1fc60b5864",
+      "name": "东方泵业",
+      "host": "10.200.0.50",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3306e7dd89341c7e",
+      "name": "东营自来水",
+      "host": "119.187.164.212",
+      "port": 9010,
+      "user": "",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "9642d9c2d042f83b",
+      "name": "中宁水务",
+      "host": "111.50.24.201",
+      "port": 9002,
+      "user": "administrator",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5edd74ab950ebc05",
+      "name": "乐清水务",
+      "host": "10.200.0.21",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3315c48590e686f4",
+      "name": "侨立水务",
+      "host": "222.179.93.62",
+      "port": 8802,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3fbf1e42c809d4b6",
+      "name": "吉安水务41",
+      "host": "10.200.0.27",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 5,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c34e841a25adcd22",
+      "name": "吉安水务42",
+      "host": "10.200.0.28",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 6,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "0c8beb2ac6f07999",
+      "name": "吉安水务VPN",
+      "host": "10.36.32.41",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 7,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5aa11d603774c915",
+      "name": "标定系统",
+      "host": "116.236.30.66",
+      "port": 8901,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 8,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "eb1b0aa976b412ac",
+      "name": "水量分析AI助理",
+      "host": "116.236.30.66",
+      "port": 9922,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 9,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "6bba906300e56d99",
+      "name": "江夏水务[154]",
+      "host": "10.200.0.25",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 10,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3bf43c1ecd7bf15f",
+      "name": "江夏水务[155]",
+      "host": "10.200.0.24",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 11,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "7caba3f10c2ec72e",
+      "name": "江夏水务[157]",
+      "host": "10.200.0.35",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 12,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3374c063b553d1b3",
+      "name": "江夏水务龙床矶水厂",
+      "host": "172.17.22.7",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 13,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "10ac522940790ed4",
+      "name": "消火栓（新）",
+      "host": "110.40.249.203",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 14,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "a68226c63fe227b3",
+      "name": "温州自来水",
+      "host": "10.200.0.36",
+      "port": 22,
+      "user": "lijiajie",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 15,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "efefe96575a34e9e",
+      "name": "石嘴山",
+      "host": "111.50.157.124",
+      "port": 12022,
+      "user": "administrator",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 16,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "f7ad80fb54ee666a",
+      "name": "莱西18",
+      "host": "10.200.0.16",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 17,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "7a6958a000d7821d",
+      "name": "莱西19",
+      "host": "10.200.0.17",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 18,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "2f9af9624ffaa5cf",
+      "name": "银龙水务",
+      "host": "10.200.0.30",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 19,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5ea29a919a725d15",
+      "name": "锐智水云",
+      "host": "106.54.189.11",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 20,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "09bb2d7f29728d93",
+      "name": "锐铼数据仓库",
+      "host": "116.236.30.66",
+      "port": 16303,
+      "user": "administrator",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 21,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "1d72000621f1ddb1",
+      "name": "长城水务滨河分公司",
+      "host": "10.200.0.13",
+      "port": 22,
+      "user": "binhe",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 22,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "6c16f43b6c947552",
+      "name": "青浦自来水",
+      "host": "10.200.0.29",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 23,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "fb6d023ba010d344",
+      "name": "青浦自来水VPN",
+      "host": "192.168.5.101",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 24,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "73a617b1cedef3c3",
+      "name": "预警平台",
+      "host": "116.236.30.66",
+      "port": 8822,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 25,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5e86844965e3fd51",
+      "name": "龙港水务",
+      "host": "10.200.0.52",
+      "port": 22,
+      "user": "root",
+      "folder_id": "2c1116568bbee4f4",
+      "order": 26,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "ed8c6ad639ede20b",
+      "name": "中国水务10.3.0.30",
+      "host": "10.200.0.32",
+      "port": 22,
+      "user": "root",
+      "folder_id": "61e51337a65115d9",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "d310795af1519a98",
+      "name": "中国水务10.3.0.31",
+      "host": "10.200.0.33",
+      "port": 22,
+      "user": "root",
+      "folder_id": "61e51337a65115d9",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c726dafca347880d",
+      "name": "开远漏控",
+      "host": "10.200.0.49",
+      "port": 22,
+      "user": "root",
+      "folder_id": "fd83f47098135cf1",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "6d5cde07c38ddea6",
+      "name": "南京君吉",
+      "host": "47.97.254.81",
+      "port": 22,
+      "user": "root",
+      "folder_id": "53a585de407208f3",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "b62578c3f38d270c",
+      "name": "城乡水务",
+      "host": "117.82.138.171",
+      "port": 10010,
+      "user": "root",
+      "folder_id": "53a585de407208f3",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5736c32de9fedaa3",
+      "name": "水务局",
+      "host": "114.220.179.182",
+      "port": 10010,
+      "user": "root",
+      "folder_id": "53a585de407208f3",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "d393e2057613cdf3",
+      "name": "水务局（政务网）",
+      "host": "10.200.0.23",
+      "port": 22,
+      "user": "root",
+      "folder_id": "53a585de407208f3",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "05bc2ad29a9e9455",
+      "name": "珠江污水厂",
+      "host": "10.200.0.22",
+      "port": 22,
+      "user": "root",
+      "folder_id": "53a585de407208f3",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "b227c0dd8e3939bc",
+      "name": "德馨食品",
+      "host": "36.26.3.190",
+      "port": 8800,
+      "user": "root",
+      "folder_id": "f88fbc5c30df2d02",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "09d5605bc5e13b7e",
+      "name": "47.110.125.143",
+      "host": "47.110.125.143",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0ca1ff414c01db8a",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "d0ab074f5d143892",
+      "name": "akkocloud",
+      "host": "38.59.241.235",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0ca1ff414c01db8a",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "25b91cdd840c4eba",
+      "name": "green",
+      "host": "45.129.8.98",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0ca1ff414c01db8a",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "64b31c5e2f53e150",
+      "name": "jxbskj",
+      "host": "47.100.41.191",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0ca1ff414c01db8a",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "5fc5a8091a42b1f6",
+      "name": "胡健VPN",
+      "host": "185.218.4.77",
+      "port": 22,
+      "user": "",
+      "folder_id": "0ca1ff414c01db8a",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "24d6616900d47951",
+      "name": "临安排水(207)",
+      "host": "198.168.198.207",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e5b5fb693dddf54",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "d80f4c7db757251b",
+      "name": "临安排水",
+      "host": "10.200.0.34",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e5b5fb693dddf54",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "0293d630848cdf41",
+      "name": "科荣云网关",
+      "host": "121.37.29.119",
+      "port": 222,
+      "user": "root",
+      "folder_id": "23704025a47f6f30",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "ac65c01f6203c290",
+      "name": "科荣信令网关",
+      "host": "123.207.49.230",
+      "port": 22,
+      "user": "root",
+      "folder_id": "23704025a47f6f30",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c08ed164072aad92",
+      "name": "华立仪表",
+      "host": "122.4.216.133",
+      "port": 22,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "57b7746cf113a12f",
+      "name": "慈溪排水",
+      "host": "10.200.0.40",
+      "port": 22,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "2730ff4dc9bfa75d",
+      "name": "新界泵业",
+      "host": "115.239.254.149",
+      "port": 22,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "1099b6484ca56efd",
+      "name": "昆仑九州",
+      "host": "47.104.217.167",
+      "port": 22,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "8c6ac0b2dc39a6af",
+      "name": "松茂电子",
+      "host": "183.249.231.64",
+      "port": 7022,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "4feed2d0639bf371",
+      "name": "赣江水工",
+      "host": "47.114.56.158",
+      "port": 22,
+      "user": "root",
+      "folder_id": "5acd44af952b8f30",
+      "order": 5,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "6811aac4ed417ba1",
+      "name": "金钥匙叉车团",
+      "host": "120.26.98.52",
+      "port": 22,
+      "user": "root",
+      "folder_id": "3385987376f56106",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "355f0446782d2862",
+      "name": "金钥匙叉车团（数据库）",
+      "host": "121.40.210.208",
+      "port": 22,
+      "user": "root",
+      "folder_id": "3385987376f56106",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "f22e4456c3257f93",
+      "name": "中卫水投",
+      "host": "10.200.0.4",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "721cf020ef99c381",
+      "name": "丽水云和",
+      "host": "10.200.0.44",
+      "port": 64422,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "b134f91a6dce237e",
+      "name": "云和水厂",
+      "host": "10.200.0.41",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "0042c325f2a77a62",
+      "name": "凤凰首创",
+      "host": "10.200.0.15",
+      "port": 10086,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "4a0eaa8657e9dbe1",
+      "name": "和济水务",
+      "host": "10.200.0.51",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "79ef0b090a33eb86",
+      "name": "宣城自来水",
+      "host": "10.200.0.57",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 5,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "e59b13f661745dcc",
+      "name": "宿松自来水",
+      "host": "10.200.0.56",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 6,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "f2b1953856cb3270",
+      "name": "平阳水务",
+      "host": "10.200.0.48",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 7,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c1ddca1006f6203d",
+      "name": "松阳水务",
+      "host": "10.200.0.10",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 8,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "7c0ae357b36266c1",
+      "name": "枞阳水务",
+      "host": "10.200.0.20",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 9,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c52dab7f73c3a267",
+      "name": "泾县自来水",
+      "host": "10.200.0.55",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 10,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "59bacf665e8ab35a",
+      "name": "津南水务",
+      "host": "10.156.0.19",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 11,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "523d3ead23009a1f",
+      "name": "测试服务器",
+      "host": "192.168.1.154",
+      "port": 22,
+      "user": "leadmap",
+      "folder_id": "39435b6848778097",
+      "order": 12,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "2257f05a1caaa444",
+      "name": "淮北项目",
+      "host": "10.200.0.54",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 13,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "432e89ad348f1082",
+      "name": "淳安39（物联）",
+      "host": "10.200.0.37",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 14,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "3358fc36762ed4a6",
+      "name": "淳安40（二供）",
+      "host": "10.200.0.38",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 15,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "7f630f77efe7d799",
+      "name": "淳安41（调度）",
+      "host": "10.200.0.39",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 16,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "4ec8227d5a8d1b40",
+      "name": "红寺堡",
+      "host": "218.21.34.226",
+      "port": 8802,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 17,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "aa92ec2477ad885c",
+      "name": "芜湖繁昌",
+      "host": "10.200.0.2",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 18,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "9ce489a06e197d31",
+      "name": "遂昌水务",
+      "host": "10.200.0.12",
+      "port": 22,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 19,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "156b8eaae197d4aa",
+      "name": "龙山调度",
+      "host": "113.219.171.189",
+      "port": 7022,
+      "user": "root",
+      "folder_id": "39435b6848778097",
+      "order": 20,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "60c48b9b440ffb4b",
+      "name": "10.200.0.18",
+      "host": "10.200.0.18",
+      "port": 22,
+      "user": "lee",
+      "folder_id": "0e18ec07b813040d",
+      "order": 0,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "fc4ee8185613de3f",
+      "name": "192.168.3.1",
+      "host": "192.168.3.1",
+      "port": 22,
+      "user": "",
+      "folder_id": "0e18ec07b813040d",
+      "order": 1,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "89eab83f17c52337",
+      "name": "192.168.3.12",
+      "host": "192.168.3.12",
+      "port": 22,
+      "user": "lee",
+      "folder_id": "0e18ec07b813040d",
+      "order": 2,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "12e99f9bf1842daf",
+      "name": "192.168.3.18",
+      "host": "192.168.3.18",
+      "port": 22,
+      "user": "leadmap",
+      "folder_id": "0e18ec07b813040d",
+      "order": 3,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "7877466f890aa191",
+      "name": "192.168.3.20",
+      "host": "192.168.3.20",
+      "port": 22,
+      "user": "ffcode",
+      "folder_id": "0e18ec07b813040d",
+      "order": 4,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "bceb5e4a11cf83a0",
+      "name": "192.168.3.23",
+      "host": "192.168.3.23",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 5,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "c63f4c4787c6269c",
+      "name": "192.168.3.29",
+      "host": "192.168.3.29",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 6,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "d9adb5c9e9442943",
+      "name": "192.168.3.3",
+      "host": "192.168.3.3",
+      "port": 22,
+      "user": "lijiajie",
+      "folder_id": "0e18ec07b813040d",
+      "order": 7,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "43a9c47e5d1427b9",
+      "name": "192.168.3.33",
+      "host": "192.168.3.33",
+      "port": 22,
+      "user": "lee",
+      "folder_id": "0e18ec07b813040d",
+      "order": 8,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "075b52e85752bfd6",
+      "name": "192.168.3.62",
+      "host": "192.168.3.62",
+      "port": 22,
+      "user": "ffcode",
+      "folder_id": "0e18ec07b813040d",
+      "order": 9,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "ee316a4c2a9fa98a",
+      "name": "192.168.3.99",
+      "host": "192.168.3.99",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 10,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "1590b780eb3d6926",
+      "name": "47.102.144.127",
+      "host": "47.102.144.127",
+      "port": 22,
+      "user": "",
+      "folder_id": "0e18ec07b813040d",
+      "order": 11,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "f22833fe5658ac3c",
+      "name": "HUB",
+      "host": "10.200.0.201",
+      "port": 22,
+      "user": "lijiajie",
+      "folder_id": "0e18ec07b813040d",
+      "order": 12,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "154a2106e9958e8c",
+      "name": "console",
+      "host": "",
+      "port": 22,
+      "user": "",
+      "folder_id": "0e18ec07b813040d",
+      "order": 13,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "dc3fb5e6c414440b",
+      "name": "www.ffcode.net",
+      "host": "www.ffcode.net",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 14,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "075cbcfe5d7f3097",
+      "name": "阿里云199",
+      "host": "47.102.104.51",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 15,
+      "save_password": false,
+      "color": "#34D399"
+    },
+    {
+      "id": "9a10e90208521c39",
+      "name": "阿里云200M",
+      "host": "106.14.202.168",
+      "port": 22,
+      "user": "root",
+      "folder_id": "0e18ec07b813040d",
+      "order": 16,
+      "save_password": false,
+      "color": "#34D399"
+    }
+  ],
+  "tunnels": [],
+  "folders": [
+    {
+      "id": "65ef34d506714920",
+      "name": "上海旗霄",
+      "order": 0
+    },
+    {
+      "id": "2c1116568bbee4f4",
+      "name": "上海锐铼",
+      "order": 1
+    },
+    {
+      "id": "61e51337a65115d9",
+      "name": "中国水务",
+      "order": 2
+    },
+    {
+      "id": "fd83f47098135cf1",
+      "name": "云南彩源",
+      "order": 3
+    },
+    {
+      "id": "53a585de407208f3",
+      "name": "南京锆沣",
+      "order": 4
+    },
+    {
+      "id": "f88fbc5c30df2d02",
+      "name": "嘉兴致远",
+      "order": 5
+    },
+    {
+      "id": "0ca1ff414c01db8a",
+      "name": "本人自用",
+      "order": 6
+    },
+    {
+      "id": "0e5b5fb693dddf54",
+      "name": "杭州岚信",
+      "order": 7
+    },
+    {
+      "id": "23704025a47f6f30",
+      "name": "深圳科荣",
+      "order": 8
+    },
+    {
+      "id": "5acd44af952b8f30",
+      "name": "胡健项目",
+      "order": 9
+    },
+    {
+      "id": "3385987376f56106",
+      "name": "金钥匙",
+      "order": 10
+    },
+    {
+      "id": "39435b6848778097",
+      "name": "领图科技",
+      "order": 11
+    },
+    {
+      "id": "0e18ec07b813040d",
+      "name": "飞凡内网",
+      "order": 12
+    }
+  ],
+  "keys": []
+}

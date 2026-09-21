@@ -37,3 +37,4 @@ server.log
 # frontend/public/.gitkeep 重新生成。
 /web/*
 !/web/.gitkeep
+/.tmp-shot

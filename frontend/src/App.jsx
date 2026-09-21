@@ -72,8 +72,7 @@ function SessionWindow() {
             }
             if (e.key === "0") {
                 e.preventDefault();
-                const base = parseInt(app.settingsRef.current.fontSize, 10);
-                document.documentElement.style.fontSize = (base >= 8 ? base : 13) + "px";
+                app.resetZoom();
                 return;
             }
 

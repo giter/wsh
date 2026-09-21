@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useApp } from "../state/store.jsx";
+import { useApp, applyZoom, zoomPercentFor, DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../state/store.jsx";
 
 function fromSettings(st) {
     return {
@@ -17,10 +17,10 @@ export default function SettingsPage() {
     const [form, setForm] = useState(() => fromSettings(app.settings));
     const [status, setStatus] = useState({ msg: "", err: false });
 
-    // Live preview: font size and theme apply as they are edited.
+    // Live preview: the zoom applies as it is edited, the same way Ctrl +/-/
+    // does.
     useEffect(() => {
-        const v = parseInt(form.fontSize, 10);
-        document.documentElement.style.fontSize = v >= 8 && v <= 32 ? v + "px" : "";
+        applyZoom(form.fontSize);
     }, [form.fontSize]);
 
     useEffect(() => {
@@ -50,8 +50,7 @@ export default function SettingsPage() {
         const next = fromSettings(app.settings);
         setForm(next);
         document.documentElement.dataset.theme = next.theme;
-        const v = parseInt(next.fontSize, 10);
-        document.documentElement.style.fontSize = v >= 8 && v <= 32 ? v + "px" : "";
+        applyZoom(next.fontSize);
         setStatus({ msg: "", err: false });
     };
 
@@ -70,8 +69,15 @@ export default function SettingsPage() {
                     <h3>外观</h3>
                     <div className="grid">
                         <label className="field">
-                            <span>字体大小 (px)</span>
-                            <input type="number" min="8" max="32" value={form.fontSize} onChange={set("fontSize")} />
+                            <span>界面缩放</span>
+                            <input
+                                type="number"
+                                min={MIN_FONT_SIZE}
+                                max={MAX_FONT_SIZE}
+                                value={form.fontSize}
+                                onChange={set("fontSize")}
+                            />
+                            <p className="field-hint">{zoomPercentFor(form.fontSize)}%（{DEFAULT_FONT_SIZE} = 100%）</p>
                         </label>
                         <label className="field">
                             <span>主题</span>

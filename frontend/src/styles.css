@@ -194,14 +194,18 @@ html, body {
   letter-spacing: .3px;
 }
 
-/* Full-width search row: the second line of the session manager. The field itself
- * uses the shared input styling; only the room reserved for the ✕ differs. */
+/* Full-width search row: the second line of the session manager. It is pinned to
+ * the height of the tab strip beside it (#tabbar) so the two second rows line up
+ * across the split, and the field is sized like the quick connect input. */
 .sidebar-search {
   position: relative;
-  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
 }
-.sidebar-search input { padding-right: 26px; }
+.sidebar-search input { flex: 1; padding: 5px 26px 5px 10px; }
 .sidebar-search input::placeholder { color: var(--faint); }
 .search-clear {
   position: absolute;
@@ -541,6 +545,8 @@ input, select, textarea {
 input:focus, select:focus { border-color: var(--accent); }
 label.field { display: block; margin-bottom: 12px; }
 label.field > span { display: block; margin-bottom: 5px; color: var(--dim); font-size: 12px; }
+/* Helper line under a field, e.g. the zoom percentage. */
+label.field > .field-hint { margin-top: 4px; color: var(--faint); font-size: 12px; }
 .check-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; cursor: pointer; }
 .check-row input { width: auto; }
 .status-msg { min-height: 18px; color: var(--accent); font-style: italic; margin-top: 4px; }
@@ -634,9 +640,11 @@ label.field > span { display: block; margin-bottom: 5px; color: var(--dim); font
 .conn-folder > .row { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 .conn-folder > .row:last-child { border-bottom: 1px solid var(--border); border-radius: 0 0 8px 8px; }
 
-/* ---------- Global font zoom ----------
- * These override fixed px sizes so Ctrl+/-/, zoom (which sets the html
- * font-size) propagates to buttons, inputs, tabs and list text. */
+/* ---------- Global zoom ----------
+ * The UI is scaled by the native webview zoom (applyZoom in state/store.jsx),
+ * which scales the rendering as a whole. These rules only make buttons, inputs
+ * and list text inherit the UI font instead of the UA default, so they match the
+ * surrounding text at every zoom level. */
 button.btn, input, select, textarea { font-size: inherit; }
 .tab-title { font-size: 1em; }
 .row .row-sub { font-size: 0.92em; }

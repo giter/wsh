@@ -28,11 +28,48 @@ export function useApp() {
     return ctx;
 }
 
-// applySettings pushes global options into the live UI: font size (via the html
-// font-size so all rem/em-based text follows) and theme (data-theme).
+// DEFAULT_FONT_SIZE is the UI size that counts as 100% zoom. Settings store 0 for
+// "unset", which resolves back to this.
+export const DEFAULT_FONT_SIZE = 13;
+
+// The UI is scaled by zooming the whole webview, not with a CSS font size: the
+// stylesheet is fixed px throughout (so a root font-size changes almost nothing),
+// and a native zoom also scales the terminal canvas while keeping 100vh layouts
+// fitting the window. Windows clamps the webview zoom at 100%, hence the floor.
+export const MIN_FONT_SIZE = DEFAULT_FONT_SIZE;
+export const MAX_FONT_SIZE = 32;
+
+// zoomFactorFor maps the stored UI size to a webview zoom factor.
+export function zoomFactorFor(fontSize) {
+    const px = parseInt(fontSize, 10);
+    const base = px >= MIN_FONT_SIZE && px <= MAX_FONT_SIZE ? px : DEFAULT_FONT_SIZE;
+    return base / DEFAULT_FONT_SIZE;
+}
+
+// zoomPercentFor is the same value as the percentage shown in the options window.
+export function zoomPercentFor(fontSize) {
+    return Math.round(zoomFactorFor(fontSize) * 100);
+}
+
+// applyZoom asks the desktop shell to zoom this window. Every window zooms itself
+// as it applies settings, so the zoom follows the user across windows without the
+// backend tracking a factor per window. Headless runs have no webview; the failed
+// call is ignored.
+export function applyZoom(fontSize) {
+    rpc.call("app.action", { action: "zoom", window: WINDOW, zoom: zoomFactorFor(fontSize) }).catch(() => {});
+}
+
+// requestLatinInput asks the desktop shell to switch this window's OS input
+// method to English, so a passphrase prompt starts out accepting ASCII instead
+// of whatever IME the user had active. Only the native side can do this; headless
+// runs and platforms without an IME ignore the failed call.
+export function requestLatinInput() {
+    rpc.call("app.action", { action: "ime-latin", window: WINDOW }).catch(() => {});
+}
+
+// applySettings pushes global options into the live UI: the zoom and the theme.
 function applySettings(st) {
-    const fs = parseInt(st.fontSize, 10);
-    document.documentElement.style.fontSize = fs >= 8 && fs <= 32 ? fs + "px" : "";
+    applyZoom(st.fontSize);
     document.documentElement.dataset.theme = st.theme === "light" ? "light" : "dark";
 }
 
@@ -96,15 +133,21 @@ export function AppProvider({ children }) {
         return st;
     }, []);
 
-    // zoomFont changes the global font size by delta px; the new size is
-    // persisted (debounced) by the effect below.
+    // zoomFont steps the UI size by delta px (DEFAULT_FONT_SIZE = 100%). The zoom
+    // itself is a webview zoom applied by applySettings; the new size is persisted
+    // (debounced) by the effect below.
     const zoomFont = useCallback((delta) => {
-        const st = settingsRef.current;
-        const base = parseInt(st.fontSize, 10) >= 8 ? parseInt(st.fontSize, 10) : 13;
-        const cur = parseInt(document.documentElement.style.fontSize, 10) || base;
-        const next = Math.min(32, Math.max(8, cur + delta));
-        document.documentElement.style.fontSize = next + "px";
+        const cur = parseInt(settingsRef.current.fontSize, 10);
+        const base = cur >= MIN_FONT_SIZE && cur <= MAX_FONT_SIZE ? cur : DEFAULT_FONT_SIZE;
+        const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, base + delta));
         setSettings((s) => ({ ...s, fontSize: next }));
+    }, []);
+
+    // resetZoom returns to 100%. It cannot read the stored size to do so: zoom is
+    // persisted, so the stored value is already the zoomed one and resetting to it
+    // would be a no-op.
+    const resetZoom = useCallback(() => {
+        setSettings((s) => ({ ...s, fontSize: DEFAULT_FONT_SIZE }));
     }, []);
 
     // Persist font zoom after the user stops pressing the keys.
@@ -335,6 +378,7 @@ export function AppProvider({ children }) {
             settingsRef,
             saveSettings,
             zoomFont,
+            resetZoom,
             connections,
             folders,
             keys,
@@ -363,6 +407,7 @@ export function AppProvider({ children }) {
             settings,
             saveSettings,
             zoomFont,
+            resetZoom,
             connections,
             folders,
             keys,
