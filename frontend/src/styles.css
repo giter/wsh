@@ -110,7 +110,6 @@ html, body {
   border: none;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
   padding: 0 10px;
   border-radius: 6px;
   cursor: default;
@@ -145,7 +144,7 @@ html, body {
 .menu-dropdown .mi .mi-label { flex: 1; }
 .menu-dropdown .mi .mi-accel {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 .menu-dropdown .sep { height: 1px; margin: 5px 6px; background: var(--border); }
@@ -187,7 +186,7 @@ html, body {
 .side-mini {
   flex: 1;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -295,7 +294,7 @@ html, body {
 #quick-connect input {
   flex: 1;
   padding: 5px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
 }
 #quick-connect .btn { flex: 0 0 auto; }
@@ -335,7 +334,7 @@ html, body {
 .tab .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .tab:hover { background: var(--panel); color: var(--text); }
 .tab.active {
@@ -391,6 +390,12 @@ html, body {
   background: #111118;
 }
 .term-wrap .xterm { height: 100%; }
+/* xterm.js 的 viewport 用浏览器默认滚动条（WebView2 上是浅色的，与主题不搭），
+   这里换成与侧栏一致的窄深色滚动条。 */
+.term-wrap .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.term-wrap .xterm-viewport::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.term-wrap .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+.term-wrap .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
 
 /* Overlay shown over the terminal while it is connecting / after a failure. */
 .term-overlay {
@@ -535,7 +540,7 @@ label.field > span { display: block; margin-bottom: 5px; color: var(--dim); font
  * These override fixed px sizes so Ctrl+/-/, zoom (which sets the html
  * font-size) propagates to buttons, inputs, tabs and list text. */
 button.btn, input, select, textarea { font-size: inherit; }
-.tab-title { font-size: 0.96em; }
+.tab-title { font-size: 1em; }
 .row .row-sub { font-size: 0.92em; }
 .badge { font-size: 0.85em; }
 
@@ -650,7 +655,7 @@ button.btn, input, select, textarea { font-size: inherit; }
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .key-fp { color: var(--faint); }
 .key-pub {
@@ -675,7 +680,7 @@ button.btn, input, select, textarea { font-size: inherit; }
 textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace; }
 .field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .field-row > span { flex: 1; color: var(--dim); font-size: 12px; }
-.hint { color: var(--faint); font-size: 11.5px; margin-top: 6px; line-height: 1.5; }
+.hint { color: var(--faint); font-size: 12px; margin-top: 6px; line-height: 1.5; }
 
 /* ---------- About dialog ---------- */
 .about { text-align: center; padding: 6px 0 2px; }

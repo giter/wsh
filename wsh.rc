@@ -1,0 +1,4 @@
+// Windows resources for wsh: application icon shown in Explorer and the
+// taskbar. Compiled to rsrc_windows_amd64.syso by build.sh (windres), which
+// the Go linker picks up automatically during `go build`.
+1 ICON "build/icon.ico"

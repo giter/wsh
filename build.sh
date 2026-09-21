@@ -28,6 +28,14 @@ if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
   exit 1
 fi
 
+# 2.5) Windows 资源（应用图标）：编译成 .syso，go build 会自动链接。
+if command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then
+  echo ">> 编译 Windows 资源 (图标) ..."
+  x86_64-w64-mingw32-windres -O coff -o rsrc_windows_amd64.syso wsh.rc
+else
+  echo "警告：未找到 x86_64-w64-mingw32-windres，跳过图标资源编译" >&2
+fi
+
 echo ">> 交叉编译 Windows amd64 (CGO + mingw) ..."
 CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
   CC=x86_64-w64-mingw32-gcc \
