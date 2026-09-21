@@ -62,7 +62,7 @@ func main() {
 	}()
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
-	log.Printf("FyneShell 服务已启动：%s", url)
+	log.Printf("wsh 服务已启动：%s", url)
 
 	shutdown := func() {
 		srv.Close()
@@ -82,14 +82,14 @@ func main() {
 	// layer are untouched; Wails only provides the window shell (plus the
 	// cross-platform webview and desktop chrome: tray, menus, dialogs, ...).
 	app := application.New(application.Options{
-		Name: "FyneShell",
+		Name: "wsh",
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "FyneShell",
+		Title: "wsh",
 		// On Windows/Linux the menu is per-window: this option makes the
 		// window display the application menu set via app.Menu.Set (macOS
 		// ignores it and always shows the global menu bar).
@@ -168,10 +168,10 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window)
 		})
 
 	helpMenu := menu.AddSubmenu("帮助")
-	helpMenu.Add("关于 FyneShell").OnClick(func(ctx *application.Context) {
+	helpMenu.Add("关于 wsh").OnClick(func(ctx *application.Context) {
 		app.Dialog.Info().
-			SetTitle("关于 FyneShell").
-			SetMessage("FyneShell\n\n基于 Go + Wails v3 的跨平台 SSH 客户端。\n终端渲染：xterm.js").
+			SetTitle("关于 wsh").
+			SetMessage("wsh\n\n基于 Go + Wails v3 的跨平台 SSH 客户端。\n终端渲染：xterm.js").
 			Show()
 	})
 	helpMenu.Add("开发者工具").OnClick(func(ctx *application.Context) {

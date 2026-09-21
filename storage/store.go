@@ -13,7 +13,7 @@ func configDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(base, "fyneshell")
+	dir := filepath.Join(base, "wsh")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

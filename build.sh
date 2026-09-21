@@ -2,14 +2,14 @@
 # 交叉编译 Windows 版（Wails v3 需要 CGO，需安装 mingw-w64 交叉工具链）。
 #
 # 用法：
-#   ./build_windows.sh            # 生成 FyneShell.exe
+#   ./build_windows.sh            # 生成 wsh.exe
 #
 # 依赖（Debian/Ubuntu）：
 #   sudo apt install gcc-mingw-w64-x86-64
 set -euo pipefail
 cd "$(dirname "$0")"
 
-OUT="FyneShell.exe"
+OUT="wsh.exe"
 
 if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
   echo "错误：未找到 x86_64-w64-mingw32-gcc，请先安装 mingw-w64 交叉工具链：" >&2

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 构建并启动 FyneShell（Go 后端 + Web 前端，Wails v3 原生窗口）。
+# 构建并启动 wsh（Go 后端 + Web 前端，Wails v3 原生窗口）。
 #
 # 用法：
 #   ./run.sh                # 构建并启动（弹出原生窗口）
@@ -8,11 +8,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo ">> 构建 ..."
-go build -o fyneshell .
+go build -o wsh .
 
 echo ">> 启动 ..."
 if [[ "${1:-}" == "--no-open" ]]; then
-  ./fyneshell -no-open
+  ./wsh -no-open
 else
-  ./fyneshell
+  ./wsh
 fi

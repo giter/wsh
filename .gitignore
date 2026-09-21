@@ -26,7 +26,7 @@ go.work.sum
 .env
 
 # Build artifacts (Web-based client)
-fyneshell
-FyneShell.exe
+wsh
+wsh.exe
 fssh
 server.log

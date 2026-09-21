@@ -1,4 +1,4 @@
-# FyneShell
+# wsh
 
 基于 Go + Web 的跨平台 SSH 客户端。后端用 Go 实现，界面是内嵌的 Web 前端
 （ZED 风格：左侧连接树 + 顶部多标签页），终端用 xterm.js 渲染，
@@ -44,7 +44,7 @@ sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
 ./run.sh
 
 # 只构建二进制
-go build -o fyneshell .
+go build -o wsh .
 ```
 
 ### Windows（.exe）
@@ -53,24 +53,24 @@ Windows 版依赖 WebView2 Runtime（Win10/11 自带），交叉编译需要 min
 
 ```bash
 sudo apt install gcc-mingw-w64-x86-64   # 交叉工具链
-./build_windows.sh                      # 生成 FyneShell.exe
+./build_windows.sh                      # 生成 wsh.exe
 ```
 
-> 生成的 `FyneShell.exe` 在 Windows 上启动后直接显示原生窗口，
+> 生成的 `wsh.exe` 在 Windows 上启动后直接显示原生窗口，
 > 无需打开浏览器。
 
 ## 使用
 
 启动后程序在 `127.0.0.1` 随机端口起一个本地服务，并在 Wails 原生窗口
 中加载前端界面（`-no-open` 可只起服务不弹窗，便于调试）。
-配置数据保存在系统配置目录下 `fyneshell/config.json`（密码为加密后的密文），
+配置数据保存在系统配置目录下 `wsh/config.json`（密码为加密后的密文），
 机器密钥保存在同目录 `secret.key`。
 
 原生菜单栏：
 
 - **文件** — 新建连接（`Ctrl/Cmd+N`）、连接管理（`Ctrl/Cmd+,`）、退出
 - **视图** — 连接 / 文件传输 / 端口隧道 快速切换（`Ctrl/Cmd+1/2/3`）
-- **帮助** — 关于 FyneShell、开发者工具（DevTools）
+- **帮助** — 关于 wsh、开发者工具（DevTools）
 
 - 左侧「连接」树里点某台服务器即打开一个终端标签页
 - 连接失败（无密码 / 密码错误）会弹窗让你输入密码后重试
