@@ -78,23 +78,35 @@ export default function TerminalTab({ tab, active }) {
         });
 
         let opened = false;
-        const connect = (password) => {
+        const connect = (password, keyPassphrase) => {
             setPhase("connecting");
             setErrorMsg("");
             // Saved connection (connId) or an ad-hoc quick-connect target.
+            // keyPassphrase is the passphrase typed at a connect prompt for an
+            // encrypted managed key; it stays in memory on the backend only.
             const target = tab.connId
-                ? { connId: tab.connId, password: password || "" }
-                : { host: tab.host, port: tab.port, user: tab.user, password: password || "" };
+                ? { connId: tab.connId, password: password || "", keyPassphrase: keyPassphrase || "" }
+                : { host: tab.host, port: tab.port, user: tab.user, password: password || "", keyPassphrase: keyPassphrase || "" };
             rpc.call("terminal.open", target)
                 .then((res) => {
                     if (disposed) return;
+                    if (res && res.needPassphrase) {
+                        setPhase("error");
+                        setErrorMsg(res.message || "需要口令");
+                        app.openDialog({
+                            type: "passphrase",
+                            message: res.message || "需要口令",
+                            onSubmit: (pass) => connect(password, pass),
+                        });
+                        return;
+                    }
                     if (res && res.needPassword) {
                         setPhase("error");
                         setErrorMsg(res.message || "需要密码");
                         app.openDialog({
                             type: "password",
                             message: res.message || "需要密码",
-                            onSubmit: (pw) => connect(pw),
+                            onSubmit: (pw) => connect(pw, keyPassphrase),
                         });
                         return;
                     }

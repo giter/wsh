@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	sshclient "sshclient/ssh"
@@ -145,13 +146,14 @@ func (s *Server) handleDeleteConnection(c *wsClient, params json.RawMessage) (in
 
 func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (interface{}, error) {
 	var p struct {
-		ID       string `json:"id"`
-		Host     string `json:"host"`
-		Port     int    `json:"port"`
-		User     string `json:"user"`
-		Password string `json:"password"`
-		KeyPath  string `json:"keyPath"`
-		KeyID    string `json:"keyId"`
+		ID            string `json:"id"`
+		Host          string `json:"host"`
+		Port          int    `json:"port"`
+		User          string `json:"user"`
+		Password      string `json:"password"`
+		KeyPath       string `json:"keyPath"`
+		KeyID         string `json:"keyId"`
+		KeyPassphrase string `json:"keyPassphrase"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -173,8 +175,29 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 			conn.EncryptedPassword = existing.EncryptedPassword
 		}
 	}
-	client, err := sshclient.Dial(conn, p.Password, s.store.KeyMaterial)
+	// The resolver applies a passphrase typed at the prompt to managed keys
+	// that have none stored, mirroring the connect flow.
+	resolve := func(keyID string) (string, string, error) {
+		pem, pass, err := s.store.KeyMaterial(keyID)
+		if err == nil && pass == "" && p.KeyPassphrase != "" {
+			pass = p.KeyPassphrase
+		}
+		return pem, pass, err
+	}
+	client, err := sshclient.Dial(conn, p.Password, resolve)
 	if err != nil {
+		var pe *sshclient.PassphraseError
+		if errors.As(err, &pe) {
+			name := ""
+			if k, kerr := s.findKey(pe.KeyID); kerr == nil {
+				name = k.Name
+			}
+			msg := "该私钥已加密，请输入口令"
+			if name != "" {
+				msg = fmt.Sprintf("私钥「%s」已加密，请输入口令", name)
+			}
+			return map[string]interface{}{"needPassphrase": true, "keyId": pe.KeyID, "message": msg}, nil
+		}
 		return nil, fmt.Errorf("连接失败：%w", err)
 	}
 	_ = client.Close()

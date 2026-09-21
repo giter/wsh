@@ -24,7 +24,7 @@ func TestDialAdhoc(t *testing.T) {
 	}
 
 	// The fake server accepts any credential.
-	client, err := sshclient.DialAdhoc(host, port, "u", "p", nil)
+	client, err := sshclient.DialAdhoc(host, port, "u", "p", "", nil)
 	if err != nil {
 		t.Fatalf("DialAdhoc with password: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestDialAdhoc(t *testing.T) {
 
 	// No password and no keys: refuse locally, with the message the frontend
 	// keys off to ask for a password.
-	if _, err := sshclient.DialAdhoc(host, port, "u", "", nil); err == nil {
+	if _, err := sshclient.DialAdhoc(host, port, "u", "", "", nil); err == nil {
 		t.Fatal("expected an error when no authentication method is available")
 	} else if !strings.Contains(err.Error(), "no authentication method") {
 		t.Fatalf("unexpected error: %v", err)

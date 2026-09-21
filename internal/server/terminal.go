@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -54,10 +55,11 @@ type WebSession struct {
 }
 
 type openTerminalParams struct {
-	ConnectionID string `json:"connId"`
-	Cols         int    `json:"cols"`
-	Rows         int    `json:"rows"`
-	Password     string `json:"password"` // 用户本次输入的密码（可选）
+	ConnectionID  string `json:"connId"`
+	Cols          int    `json:"cols"`
+	Rows          int    `json:"rows"`
+	Password      string `json:"password"`      // 用户本次输入的密码（可选）
+	KeyPassphrase string `json:"keyPassphrase"` // 用户本次输入的私钥口令（可选）
 
 	// Ad-hoc connection (quick connect): used when ConnectionID is empty, so a
 	// one-off session can be opened without saving a connection first.
@@ -89,6 +91,11 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 		if p.Password != "" {
 			passPtr = &p.Password
 		}
+		// A passphrase typed at the prompt wins over any stored copy for this
+		// run (it also replaces a stale saved one that keeps failing).
+		if p.KeyPassphrase != "" && conn.KeyID != "" {
+			s.pool.ProvidePassphrase(conn.KeyID, p.KeyPassphrase)
+		}
 		client, err = s.pool.Get(conn, passPtr)
 
 	case p.Host != "":
@@ -108,13 +115,27 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 			Port: p.Port,
 			User: p.User,
 		}
-		client, err = sshclient.DialAdhoc(p.Host, p.Port, p.User, p.Password, s.allKeyMaterials())
+		client, err = sshclient.DialAdhoc(p.Host, p.Port, p.User, p.Password, p.KeyPassphrase, s.allKeyMaterials(p.KeyPassphrase))
 
 	default:
 		return nil, fmt.Errorf("缺少连接信息")
 	}
 
 	if err != nil {
+		// An encrypted managed key without a usable passphrase is resolved by
+		// prompting for that key's passphrase and retrying.
+		var pe *sshclient.PassphraseError
+		if errors.As(err, &pe) {
+			name := ""
+			if k, kerr := s.findKey(pe.KeyID); kerr == nil {
+				name = k.Name
+			}
+			msg := "该私钥已加密，请输入口令"
+			if name != "" {
+				msg = fmt.Sprintf("私钥「%s」已加密，请输入口令", name)
+			}
+			return map[string]interface{}{"needPassphrase": true, "keyId": pe.KeyID, "message": msg}, nil
+		}
 		// An authentication failure means the UI should prompt for a password
 		// and retry, instead of showing a dead-end error.
 		if needsPassword(err) {

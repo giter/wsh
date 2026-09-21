@@ -57,6 +57,13 @@ export function triggerDownload(name, bytes) {
     URL.revokeObjectURL(url);
 }
 
+// defaultConnName builds the pre-filled name for an address, e.g.
+// "root@10.0.0.1", or "root@10.0.0.1:2222" for a non-default port.
+export function defaultConnName(user, host, port) {
+    const h = port && port !== 22 ? `${host}:${port}` : host;
+    return `${user}@${h}`;
+}
+
 // parseQuickConnect parses an Xshell-style quick connect address. Accepted:
 //   ssh://user@host:port, user@host:port, host:port, user@host, host
 // Returns {user, host, port} (port defaults to 22), or null when no host is

@@ -178,6 +178,46 @@ export function AppProvider({ children }) {
         setActiveTab(id);
     }, []);
 
+    // Rename a tab's session title. For saved connections use
+    // renameConnection so the sidebar name stays in sync.
+    const renameTab = useCallback((id, title) => {
+        const name = String(title || "").trim();
+        if (!name) return;
+        setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, title: name } : t)));
+    }, []);
+
+    // renameConnection persists a new display name for a saved connection and
+    // refreshes both the sidebar and the open tab so the title matches.
+    const renameConnection = useCallback(
+        async (conn, name) => {
+            await rpc.call("connections.save", {
+                id: conn.id,
+                name,
+                host: conn.host,
+                port: conn.port,
+                user: conn.user,
+                folderId: conn.folderId || "",
+                // An empty password keeps the stored one on the backend.
+                password: "",
+                savePassword: conn.savePassword || false,
+                privateKeyPath: conn.privateKeyPath || "",
+                keyId: conn.keyId || "",
+            });
+            await refreshConnections();
+            setTabs((ts) =>
+                ts.map((t) => (t.connId === conn.id || t.savedConnectionId === conn.id ? { ...t, title: name } : t)),
+            );
+        },
+        [refreshConnections],
+    );
+
+    // markTabSaved records that an ad-hoc session was saved as a connection,
+    // adopting the connection's name as the tab title.
+    const markTabSaved = useCallback((id, conn) => {
+        if (!conn || !conn.id) return;
+        setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, savedConnectionId: conn.id, title: conn.name || t.title } : t)));
+    }, []);
+
     const closeTab = useCallback((id) => {
         const current = tabsRef.current;
         const idx = current.findIndex((t) => t.id === id);
@@ -226,6 +266,9 @@ export function AppProvider({ children }) {
             openTerminal,
             openPage,
             openQuickTerminal,
+            renameTab,
+            renameConnection,
+            markTabSaved,
             closeTab,
             selectTab,
             dialog,
@@ -249,6 +292,9 @@ export function AppProvider({ children }) {
             openTerminal,
             openPage,
             openQuickTerminal,
+            renameTab,
+            renameConnection,
+            markTabSaved,
             closeTab,
             selectTab,
             dialog,

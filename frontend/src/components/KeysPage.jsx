@@ -114,6 +114,7 @@ function KeyCard({ item: k, onEdit, onDelete }) {
                 <div className="key-name">
                     {k.name}
                     {k.hasPassphrase && <span className="badge on">已加密</span>}
+                    {k.passphraseSaved && <span className="badge off">已记住口令</span>}
                 </div>
                 <div className="key-actions">
                     <button className="btn small" onClick={() => copyText(k.publicKey)}>

@@ -12,24 +12,31 @@ import (
 // keyView is the managed-key shape sent to the browser. It carries only the
 // public half and metadata; the private material never leaves the backend.
 type keyView struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Comment       string `json:"comment"`
-	PublicKey     string `json:"publicKey"`
-	Fingerprint   string `json:"fingerprint"`
-	KeyType       string `json:"keyType"`
-	HasPassphrase bool   `json:"hasPassphrase"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Comment     string `json:"comment"`
+	PublicKey   string `json:"publicKey"`
+	Fingerprint string `json:"fingerprint"`
+	KeyType     string `json:"keyType"`
+	// HasPassphrase means the key material is passphrase-protected, so
+	// connecting will ask for one unless it was saved (see PassphraseSaved).
+	HasPassphrase bool `json:"hasPassphrase"`
+	// PassphraseSaved means the passphrase was persisted (opt-in at save time).
+	PassphraseSaved bool `json:"passphraseSaved"`
 }
 
 func toKeyView(k *storage.SSHKey) keyView {
 	return keyView{
-		ID:            k.ID,
-		Name:          k.Name,
-		Comment:       k.Comment,
-		PublicKey:     k.PublicKey,
-		Fingerprint:   k.Fingerprint,
-		KeyType:       k.KeyType,
-		HasPassphrase: k.EncryptedPassphrase != "",
+		ID:          k.ID,
+		Name:        k.Name,
+		Comment:     k.Comment,
+		PublicKey:   k.PublicKey,
+		Fingerprint: k.Fingerprint,
+		KeyType:     k.KeyType,
+		// Keys saved before the flag existed only stored a passphrase when the
+		// key was encrypted, so a stored one implies encryption.
+		HasPassphrase:   k.KeyEncrypted || k.EncryptedPassphrase != "",
+		PassphraseSaved: k.EncryptedPassphrase != "",
 	}
 }
 
@@ -44,12 +51,15 @@ func (s *Server) handleListKeys(c *wsClient, params json.RawMessage) (interface{
 
 // saveKeyParams submits a user key. privateKey is only required when creating a
 // key or replacing its material; leaving it empty on edit keeps the stored key.
+// The passphrase is validated at save time but only persisted when
+// savePassphrase is set; by default it is asked for again at connect time.
 type saveKeyParams struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Comment    string `json:"comment"`
-	PrivateKey string `json:"privateKey"`
-	Passphrase string `json:"passphrase"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Comment        string `json:"comment"`
+	PrivateKey     string `json:"privateKey"`
+	Passphrase     string `json:"passphrase"`
+	SavePassphrase bool   `json:"savePassphrase"`
 }
 
 func (s *Server) handleSaveKey(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -96,6 +106,7 @@ func (s *Server) handleSaveKey(c *wsClient, params json.RawMessage) (interface{}
 		}
 		existing.EncryptedPrivateKey = replacement.EncryptedPrivateKey
 		existing.EncryptedPassphrase = replacement.EncryptedPassphrase
+		existing.KeyEncrypted = replacement.KeyEncrypted
 		existing.PublicKey = replacement.PublicKey
 		existing.Fingerprint = replacement.Fingerprint
 		existing.KeyType = replacement.KeyType
@@ -108,7 +119,10 @@ func (s *Server) handleSaveKey(c *wsClient, params json.RawMessage) (interface{}
 }
 
 // buildKey validates and encrypts the submitted key material, returning an
-// SSHKey populated with the derived public metadata (no ID set).
+// SSHKey populated with the derived public metadata (no ID set). The
+// passphrase is deliberately not persisted unless the user opted in: by
+// default it must be re-entered when connecting, so nothing on disk can
+// decrypt the key.
 func buildKey(p saveKeyParams) (*storage.SSHKey, error) {
 	info, err := sshclient.ParseKey([]byte(p.PrivateKey), p.Passphrase)
 	if err != nil {
@@ -117,12 +131,18 @@ func buildKey(p saveKeyParams) (*storage.SSHKey, error) {
 		}
 		return nil, fmt.Errorf("解析私钥失败：%w", err)
 	}
+	// Detect whether the material itself is passphrase-protected (a key that
+	// parses without a passphrase is plaintext and needs none at connect).
+	keyEncrypted := false
+	if _, err := sshclient.ParseKey([]byte(p.PrivateKey), ""); err != nil && sshclient.PassphraseRequired(err) {
+		keyEncrypted = true
+	}
 	enc, err := storage.EncryptSecret(p.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("保存私钥失败：%w", err)
 	}
 	var encPass string
-	if p.Passphrase != "" {
+	if p.SavePassphrase && p.Passphrase != "" {
 		if encPass, err = storage.EncryptSecret(p.Passphrase); err != nil {
 			return nil, fmt.Errorf("保存口令失败：%w", err)
 		}
@@ -132,6 +152,7 @@ func buildKey(p saveKeyParams) (*storage.SSHKey, error) {
 		Comment:             p.Comment,
 		EncryptedPrivateKey: enc,
 		EncryptedPassphrase: encPass,
+		KeyEncrypted:        keyEncrypted,
 		PublicKey:           info.PublicKey,
 		Fingerprint:         info.Fingerprint,
 		KeyType:             info.KeyType,
@@ -162,15 +183,22 @@ func (s *Server) findKey(id string) (*storage.SSHKey, error) {
 }
 
 // allKeyMaterials decrypts every managed key so an ad-hoc (quick connect)
-// session can try them, the way the ssh client tries every identity.
-func (s *Server) allKeyMaterials() []sshclient.KeyMaterial {
+// session can try them, the way the ssh client tries every identity. Keys
+// without a stored passphrase are included unencrypted-passphrased: the ssh
+// client reports a PassphraseError when one of them blocks the dial. extraPass
+// is the passphrase typed at a connect prompt; it is applied to keys that have
+// no stored one, since an ad-hoc dial cannot target a specific key.
+func (s *Server) allKeyMaterials(extraPass string) []sshclient.KeyMaterial {
 	var out []sshclient.KeyMaterial
 	for _, k := range s.store.Keys() {
 		pem, passphrase, err := s.store.KeyMaterial(k.ID)
 		if err != nil || pem == "" {
 			continue
 		}
-		out = append(out, sshclient.KeyMaterial{PEM: pem, Passphrase: passphrase})
+		if passphrase == "" && extraPass != "" {
+			passphrase = extraPass
+		}
+		out = append(out, sshclient.KeyMaterial{ID: k.ID, PEM: pem, Passphrase: passphrase})
 	}
 	return out
 }

@@ -2,7 +2,7 @@ import { useApp } from "../state/store.jsx";
 import ConnectionDialog from "./ConnectionDialog.jsx";
 import KeyDialog from "./KeyDialog.jsx";
 import TunnelDialog from "./TunnelDialog.jsx";
-import { AboutDialog, ConfirmDialog, NoticeDialog, PasswordDialog, PromptDialog } from "./SimpleDialogs.jsx";
+import { AboutDialog, ConfirmDialog, NoticeDialog, PassphraseDialog, PasswordDialog, PromptDialog } from "./SimpleDialogs.jsx";
 
 // DialogHost renders the single active dialog requested through the store's
 // openDialog({type, ...}) API.
@@ -12,7 +12,7 @@ export default function DialogHost() {
 
     switch (dialog.type) {
         case "connection":
-            return <ConnectionDialog conn={dialog.conn} onClose={closeDialog} />;
+            return <ConnectionDialog conn={dialog.conn} draft={dialog.draft} onSaved={dialog.onSaved} onClose={closeDialog} />;
         case "key":
             return <KeyDialog item={dialog.key} onSaved={dialog.onSaved} onClose={closeDialog} />;
         case "tunnel":
@@ -39,6 +39,8 @@ export default function DialogHost() {
             );
         case "password":
             return <PasswordDialog message={dialog.message} onSubmit={dialog.onSubmit} onClose={closeDialog} />;
+        case "passphrase":
+            return <PassphraseDialog message={dialog.message} onSubmit={dialog.onSubmit} onClose={closeDialog} />;
         case "notice":
             return <NoticeDialog title={dialog.title} message={dialog.message} onClose={closeDialog} />;
         case "about":

@@ -354,6 +354,17 @@ html, body {
   cursor: pointer;
 }
 .tab .tab-close:hover { color: var(--danger); background: rgba(244,63,94,.12); }
+.tab .tab-save {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tab .tab-save:hover { color: var(--accent); background: rgba(52,211,153,.12); }
 
 /* "New connection" button at the end of the tab strip (Xshell style). */
 .tab-add {

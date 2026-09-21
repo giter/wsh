@@ -126,6 +126,46 @@ export function PasswordDialog({ message, onSubmit, onClose }) {
     );
 }
 
+// PassphraseDialog asks for a managed key's passphrase at connect time. The
+// input stays in memory for the app run only; it is never persisted unless the
+// user opts in from the key manager.
+export function PassphraseDialog({ message, onSubmit, onClose }) {
+    const [pw, setPw] = useState("");
+    const submit = () => {
+        onClose();
+        onSubmit(pw);
+    };
+    return (
+        <Modal title="需要口令" onClose={onClose}>
+            <div className="status-msg err">{message}</div>
+            <label className="field">
+                <input
+                    autoFocus
+                    type="password"
+                    placeholder="私钥口令"
+                    autoComplete="off"
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            submit();
+                        }
+                    }}
+                />
+            </label>
+            <div className="modal-actions">
+                <button className="btn" onClick={onClose}>
+                    取消
+                </button>
+                <button className="btn primary" onClick={submit}>
+                    连接
+                </button>
+            </div>
+        </Modal>
+    );
+}
+
 export function NoticeDialog({ title = "提示", message, onClose }) {
     return (
         <Modal

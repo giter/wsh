@@ -8,6 +8,9 @@ export default function KeyDialog({ item, onSaved, onClose }) {
     const [comment, setComment] = useState(item?.comment || "");
     const [privateKey, setPrivateKey] = useState("");
     const [passphrase, setPassphrase] = useState("");
+    // Opt-in only: unchecked by default the passphrase is asked again on every
+    // connect and never touches disk.
+    const [savePassphrase, setSavePassphrase] = useState(item?.passphraseSaved || false);
     const [status, setStatus] = useState({ msg: "", err: false });
     const fileRef = useRef(null);
 
@@ -36,6 +39,7 @@ export default function KeyDialog({ item, onSaved, onClose }) {
                 comment: comment.trim(),
                 privateKey,
                 passphrase,
+                savePassphrase,
             });
             await onSaved?.();
             onClose();
@@ -95,9 +99,13 @@ export default function KeyDialog({ item, onSaved, onClose }) {
                     onChange={(e) => setPassphrase(e.target.value)}
                 />
             </label>
+            <label className="check-row">
+                <input type="checkbox" checked={savePassphrase} onChange={(e) => setSavePassphrase(e.target.checked)} />
+                记住口令（加密落盘；不勾选则每次连接时询问）
+            </label>
 
             <div className="hint">
-                私钥仅保存在本机（加密落盘），不会上传。复制公钥并追加到服务器的 ~/.ssh/authorized_keys 即可用该密钥登录。
+                私钥仅保存在本机（加密落盘），不会上传；口令默认不保存，只在连接时询问。复制公钥并追加到服务器的 ~/.ssh/authorized_keys 即可用该密钥登录。
             </div>
             <div className={"status-msg" + (status.err ? " err" : "")}>{status.msg}</div>
         </Modal>

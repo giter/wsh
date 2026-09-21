@@ -37,8 +37,7 @@ else
 fi
 
 echo ">> 交叉编译 Windows amd64 (CGO + mingw) ..."
-CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-  CC=x86_64-w64-mingw32-gcc \
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
   go build -trimpath -ldflags "-H windowsgui" -o "$OUT" .
 
 echo ">> 完成：$OUT"

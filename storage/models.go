@@ -34,8 +34,15 @@ type SSHKey struct {
 	Comment string `json:"comment,omitempty"`
 	// EncryptedPrivateKey is the AES-GCM ciphertext (base64) of the PEM key.
 	EncryptedPrivateKey string `json:"encrypted_private_key"`
-	// EncryptedPassphrase is the ciphertext of the key passphrase, if any.
+	// EncryptedPassphrase is the ciphertext of the key passphrase. It is only
+	// populated when the user opted in; otherwise the passphrase is asked for
+	// at connect time and never touches disk.
 	EncryptedPassphrase string `json:"encrypted_passphrase,omitempty"`
+	// KeyEncrypted records that the private key material itself is protected
+	// by a passphrase. It is derived at save time so the UI can show whether
+	// connecting will require one (the passphrase itself is never stored here
+	// unless the user opted in above).
+	KeyEncrypted bool `json:"key_encrypted"`
 	// PublicKey is the derived authorized_keys line (safe to display).
 	PublicKey string `json:"public_key,omitempty"`
 	// Fingerprint is the SHA256 fingerprint of the public key.

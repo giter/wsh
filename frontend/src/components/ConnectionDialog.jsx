@@ -1,23 +1,30 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
 
-export default function ConnectionDialog({ conn, onClose }) {
+// ConnectionDialog edits a saved connection (conn) or creates a new one. draft
+// pre-fills the form for a new connection, e.g. from a quick-connect address or
+// an open ad-hoc session. onSaved receives the saved connection view.
+export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
     const app = useApp();
     const editing = !!conn;
+    const initial = conn || draft || {};
     const [form, setForm] = useState(() => ({
-        name: conn?.name || "",
-        host: conn?.host || "",
-        port: String(conn?.port || app.settings.defaultPort || 22),
-        user: conn?.user || app.settings.defaultUser || "",
+        name: initial.name || "",
+        host: initial.host || "",
+        port: String(initial.port || app.settings.defaultPort || 22),
+        user: initial.user || app.settings.defaultUser || "",
         password: "",
-        savePassword: conn?.savePassword || false,
-        privateKeyPath: conn?.privateKeyPath || "",
-        keyId: conn?.keyId || "",
-        folderId: conn?.folderId || "",
+        savePassword: initial.savePassword || false,
+        privateKeyPath: initial.privateKeyPath || "",
+        keyId: initial.keyId || "",
+        folderId: initial.folderId || "",
     }));
     const [status, setStatus] = useState({ msg: "", err: false });
+    // Passphrase typed at the test prompt for an encrypted managed key. Kept
+    // for the dialog session only and passed along on retries.
+    const keyPassRef = useRef("");
 
     const set = (key) => (e) => {
         const value = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -27,7 +34,7 @@ export default function ConnectionDialog({ conn, onClose }) {
     const test = async () => {
         setStatus({ msg: "测试中…", err: false });
         try {
-            await rpc.call("connections.test", {
+            const res = await rpc.call("connections.test", {
                 id: editing ? conn.id : "",
                 host: form.host,
                 port: parseInt(form.port || "22", 10),
@@ -35,7 +42,20 @@ export default function ConnectionDialog({ conn, onClose }) {
                 password: form.password,
                 keyPath: form.privateKeyPath,
                 keyId: form.keyId,
+                keyPassphrase: keyPassRef.current,
             });
+            if (res && res.needPassphrase) {
+                app.openDialog({
+                    type: "passphrase",
+                    message: res.message || "需要口令",
+                    onSubmit: (pass) => {
+                        keyPassRef.current = pass;
+                        return test();
+                    },
+                });
+                setStatus({ msg: res.message || "需要口令", err: true });
+                return;
+            }
             setStatus({ msg: "连接成功 ✓", err: false });
         } catch (e) {
             setStatus({ msg: e.message, err: true });
@@ -45,7 +65,7 @@ export default function ConnectionDialog({ conn, onClose }) {
     const save = async () => {
         setStatus({ msg: "", err: false });
         try {
-            await rpc.call("connections.save", {
+            const saved = await rpc.call("connections.save", {
                 id: editing ? conn.id : "",
                 name: form.name.trim(),
                 host: form.host.trim(),
@@ -58,6 +78,7 @@ export default function ConnectionDialog({ conn, onClose }) {
                 keyId: form.keyId,
             });
             await app.refreshConnections();
+            onSaved?.(saved);
             onClose();
         } catch (e) {
             setStatus({ msg: e.message, err: true });

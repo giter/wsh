@@ -118,6 +118,7 @@ func main() {
 		mainOpts.Windows.DisableMenu = true
 	}
 	win := app.Window.NewWithOptions(mainOpts)
+	applyWindowIcon(win)
 	win.Center()
 
 	if !frameless {
@@ -269,6 +270,7 @@ func openConfigWindow(app *application.App, baseURL, name, route, title string, 
 		opts.Windows.DisableMenu = true
 	}
 	w := app.Window.NewWithOptions(opts)
+	applyWindowIcon(w)
 	w.Center()
 	w.Focus()
 }
