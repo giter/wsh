@@ -194,76 +194,131 @@ html, body {
   letter-spacing: .3px;
 }
 
-.sidebar-toolbar {
-  display: flex;
-  gap: 6px;
+/* Full-width search row: the second line of the session manager. The field itself
+ * uses the shared input styling; only the room reserved for the ✕ differs. */
+.sidebar-search {
+  position: relative;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
-.side-mini {
-  flex: 1;
-  padding: 5px 8px;
-  font-size: 13px;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.sidebar-search input { padding-right: 26px; }
+.sidebar-search input::placeholder { color: var(--faint); }
+.search-clear {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 4px;
   cursor: pointer;
-  white-space: nowrap;
 }
-.side-mini:hover { background: var(--panel-hi); border-color: var(--accent); color: var(--accent); }
-.side-mini.primary { background: var(--accent); color: #062; border-color: transparent; font-weight: 600; }
-.side-mini.primary:hover { background: var(--accent-2); color: #062; }
+.search-clear:hover { color: var(--text); background: var(--border); }
 
 #tree {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 8px;
+  padding: 4px 0 8px;
+  font-size: 13px;
 }
 #tree::-webkit-scrollbar { width: 8px; }
 #tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
 .tree-node { display: flex; flex-direction: column; }
 
+/* Flat, compact rows in the Xshell tree style: no rounded highlight block, the
+ * selected row is a full-width fill and folders are simply bolder. */
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 5px;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
   cursor: pointer;
   user-select: none;
-  color: var(--dim);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
+  line-height: 20px;
 }
-.tree-row:hover { background: var(--panel-hi); color: var(--text); }
-.tree-row .caret { width: 12px; flex: 0 0 12px; text-align: center; color: var(--faint); font-size: 10px; }
-.tree-row .caret.open { transform: rotate(90deg); }
+.tree-row:hover { background: var(--panel-hi); }
 .tree-row .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 
-.tree-row.branch { font-weight: 600; color: var(--text); }
-.tree-row.conn .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
-.tree-row.conn.selected { background: var(--panel-hi); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
-.tree-children { padding-left: 14px; }
-.tree-empty { color: var(--faint); font-size: 12px; padding: 4px 10px; }
-.tree-sep { height: 1px; background: var(--border); margin: 8px 6px; }
-
-/* Folder actions revealed on hover. */
-.tree-row .row-actions-inline { display: none; gap: 2px; margin-left: auto; }
-.tree-row:hover .row-actions-inline { display: flex; }
-.row-actions-inline button {
-  background: transparent;
-  border: none;
-  color: var(--faint);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 4px;
+/* Boxed expander, like Xshell's ⊞ / ⊟. The glyph itself is an inline SVG (see
+ * ExpanderIcon) so it stays crisp instead of scaling a text symbol. */
+.tree-row .expander {
+  width: 13px;
+  flex: 0 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
 }
-.row-actions-inline button:hover { color: var(--text); background: var(--border); }
-.row-actions-inline button.danger:hover { color: var(--danger); }
+
+/* Node icons keep the labels aligned whether or not a row has an expander. */
+.tree-row .node-icon {
+  width: 16px;
+  flex: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-row .node-icon.tool-icon { color: var(--faint); font-size: 11px; }
+
+/* The dashed guide line runs down the left of a nested level, so the tree keeps
+ * Xshell's look of expanders joined by a dotted vertical. The offsets are chosen
+ * so the line sits under the parent's expander and each level nests by the same
+ * amount. */
+.tree-row .node-icon.conn-icon { margin-left: 17px; }
+
+.tree-row.branch { font-weight: 600; }
+.tree-row.root { font-weight: 700; }
+.tree-row.conn.selected { background: var(--panel-hi); }
+.tree-row.conn.selected .lbl { font-weight: 600; }
+
+.tree-children {
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px dashed var(--border);
+}
+.tree-empty { color: var(--faint); font-size: 12px; padding: 3px 10px; }
+.tree-sep { height: 1px; background: var(--border); margin: 6px 10px; }
+
+/* ---------- Right-click menu (session tree) ----------
+ * Portalled to <body> so the tree's overflow cannot clip it; ContextMenu places
+ * it at the pointer and nudges it back inside the window. */
+.ctx-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 150px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .45);
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+.ctx-item:hover { background: var(--panel-hi); }
+.ctx-item.danger { color: var(--danger); }
+.ctx-item.danger:hover { background: rgba(244, 63, 94, .12); }
+.ctx-item:disabled { color: var(--faint); }
+.ctx-item:disabled:hover { background: transparent; }
+.ctx-sep { height: 1px; margin: 5px 6px; background: var(--border); }
 
 /* Properties pane for the selected connection. */
 #sidebar-details {
@@ -274,12 +329,26 @@ html, body {
   border-top: 1px solid var(--border);
   background: var(--panel);
 }
+.det-head { display: flex; align-items: center; margin-bottom: 8px; }
 .det-title {
   font-size: 11px;
   letter-spacing: .5px;
   color: var(--faint);
-  margin-bottom: 8px;
 }
+/* Closing the properties pane clears the selection; the pane comes back the next
+ * time a connection is picked in the tree. */
+.det-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.det-close:hover { background: var(--panel-hi); color: var(--text); }
 .det-row { display: flex; gap: 8px; padding: 3px 0; font-size: 12px; }
 .det-k { flex: 0 0 52px; color: var(--dim); }
 .det-v {
@@ -590,8 +659,9 @@ button.btn, input, select, textarea { font-size: inherit; }
 
 /* ---------- Tool rows in the session tree ----------
  * File transfer and port forwarding open their own windows rather than a tab in
- * the session window, so their rows advertise that with a trailing arrow. */
-.tree-row.tool .row-actions-inline.always { display: flex; font-size: 11px; }
+ * the session window, so their rows live under the session root too. */
+.tree-row.tool { color: var(--dim); }
+.tree-row.tool:hover { color: var(--text); }
 
 /* ---------- Drag and drop in the session tree ----------
  * Rows are draggable; the drop indicator shows whether the item lands inside a
@@ -599,15 +669,9 @@ button.btn, input, select, textarea { font-size: inherit; }
 .tree-row.conn[draggable],
 .tree-row.branch[draggable] { cursor: grab; }
 .tree-row.conn[draggable]:active,
-.tree-row.branch[draggable]:active { cursor: grabbing; }
+.tree-row.branch[draggable]:active { cursor: grabbing; opacity: .6; }
 
-/* Dim the row that is being dragged. */
-.tree-row:active { opacity: .6; }
-
-.tree-row.drop-into {
-  background: var(--panel-hi);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
+.tree-row.drop-into { background: var(--panel-hi); box-shadow: inset 0 0 0 1px var(--accent); }
 .tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 

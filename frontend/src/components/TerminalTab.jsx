@@ -112,25 +112,40 @@ export default function TerminalTab({ tab, active }) {
         });
 
         let opened = false;
-        const connect = (password, keyPassphrase) => {
+        // user carries a username typed at the login prompt, used when the saved
+        // connection has none. It applies to this login only.
+        const connect = (password, keyPassphrase, user) => {
             setPhase("connecting");
             setErrorMsg("");
             // Saved connection (connId) or an ad-hoc quick-connect target.
             // keyPassphrase is the passphrase typed at a connect prompt for an
             // encrypted managed key; it stays in memory on the backend only.
             const target = tab.connId
-                ? { connId: tab.connId, password: password || "", keyPassphrase: keyPassphrase || "" }
-                : { host: tab.host, port: tab.port, user: tab.user, password: password || "", keyPassphrase: keyPassphrase || "" };
+                ? { connId: tab.connId, user: user || "", password: password || "", keyPassphrase: keyPassphrase || "" }
+                : { host: tab.host, port: tab.port, user: user || tab.user, password: password || "", keyPassphrase: keyPassphrase || "" };
             rpc.call("terminal.open", target)
                 .then((res) => {
                     if (disposed) return;
+                    if (res && res.needUser) {
+                        // The connection has no username, so ask for one and retry
+                        // rather than failing with an opaque auth error.
+                        setPhase("error");
+                        setErrorMsg(res.message || "需要用户名");
+                        app.openDialog({
+                            type: "prompt",
+                            title: "需要登录用户名",
+                            label: "登录用户名",
+                            onSubmit: (name) => connect(password, keyPassphrase, name),
+                        });
+                        return;
+                    }
                     if (res && res.needPassphrase) {
                         setPhase("error");
                         setErrorMsg(res.message || "需要口令");
                         app.openDialog({
                             type: "passphrase",
                             message: res.message || "需要口令",
-                            onSubmit: (pass) => connect(password, pass),
+                            onSubmit: (pass) => connect(password, pass, user),
                         });
                         return;
                     }
@@ -140,7 +155,7 @@ export default function TerminalTab({ tab, active }) {
                         app.openDialog({
                             type: "password",
                             message: res.message || "需要密码",
-                            onSubmit: (pw) => connect(pw, keyPassphrase),
+                            onSubmit: (pw) => connect(pw, keyPassphrase, user),
                         });
                         return;
                     }

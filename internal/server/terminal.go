@@ -61,11 +61,15 @@ type openTerminalParams struct {
 	Password      string `json:"password"`      // 用户本次输入的密码（可选）
 	KeyPassphrase string `json:"keyPassphrase"` // 用户本次输入的私钥口令（可选）
 
+	// User is the username to log in with. For an ad-hoc target it is required;
+	// for a saved connection it is an optional override carrying the username
+	// typed at the login prompt, used for this run only.
+	User string `json:"user"`
+
 	// Ad-hoc connection (quick connect): used when ConnectionID is empty, so a
 	// one-off session can be opened without saving a connection first.
 	Host string `json:"host"`
 	Port int    `json:"port"`
-	User string `json:"user"`
 }
 
 func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -86,6 +90,22 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 		conn, err = s.findConnection(p.ConnectionID)
 		if err != nil {
 			return nil, err
+		}
+		// A username typed at the login prompt wins for this run. The override is
+		// applied to a copy, so a one-off login never rewrites stored state.
+		if p.User != "" && p.User != conn.User {
+			override := *conn
+			override.User = p.User
+			conn = &override
+		}
+		// A connection saved without a username (Xshell sessions often leave it
+		// blank and ask at login) cannot authenticate, so ask for one instead of
+		// dialing into an opaque handshake failure.
+		if conn.User == "" {
+			return map[string]interface{}{
+				"needUser": true,
+				"message":  fmt.Sprintf("连接「%s」未设置用户名，请输入登录用户名", conn.Name),
+			}, nil
 		}
 		var passPtr *string
 		if p.Password != "" {
