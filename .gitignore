@@ -30,3 +30,8 @@ wsh
 wsh.exe
 fssh
 server.log
+# 前端构建产物（frontend/ 经 `bun run build` 输出到这里）。
+# 保留目录本身，好让 `go:embed all:web` 总有目标；占位文件每次构建由
+# frontend/public/.gitkeep 重新生成。
+/web/*
+!/web/.gitkeep

@@ -77,7 +77,6 @@ export default function TitleBar({ navigateTo }) {
             label: "文件",
             items: [
                 { label: "新建连接", accel: "Ctrl+N", run: () => app.openDialog({ type: "connection", conn: null }) },
-                { label: "连接管理", accel: "Ctrl+M", run: () => navigateTo("connections") },
                 { sep: true },
                 { label: "退出", accel: "Ctrl+Q", run: () => app.appAction("quit") },
             ],

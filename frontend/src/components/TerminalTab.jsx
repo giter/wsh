@@ -81,7 +81,11 @@ export default function TerminalTab({ tab, active }) {
         const connect = (password) => {
             setPhase("connecting");
             setErrorMsg("");
-            rpc.call("terminal.open", { connId: tab.connId, password: password || "" })
+            // Saved connection (connId) or an ad-hoc quick-connect target.
+            const target = tab.connId
+                ? { connId: tab.connId, password: password || "" }
+                : { host: tab.host, port: tab.port, user: tab.user, password: password || "" };
+            rpc.call("terminal.open", target)
                 .then((res) => {
                     if (disposed) return;
                     if (res && res.needPassword) {
@@ -137,7 +141,7 @@ export default function TerminalTab({ tab, active }) {
             term.dispose();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab.connId]);
+    }, [tab.id]);
 
     // Fit and focus when this tab becomes visible. Hidden tabs have no size, so
     // fitting must not run while inactive.

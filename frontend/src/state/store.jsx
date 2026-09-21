@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { rpc } from "../lib/rpc.js";
 
 // Pages that live in a tab, keyed by the "kind" used across the UI.
+// Connection management is not a page: it lives in the sidebar session manager.
 export const PAGES = {
-    connections: { id: "conns-page", title: "连接管理" },
     sftp: { id: "sftp-page", title: "文件传输" },
     tunnels: { id: "tunnels-page", title: "端口隧道" },
 };
@@ -164,6 +164,20 @@ export function AppProvider({ children }) {
         setActiveTab(page.id);
     }, []);
 
+    // openQuickTerminal opens a one-off session for an unsaved address (quick
+    // connect). Every call gets its own tab, so the same host can be opened
+    // more than once.
+    const adhocSeq = useRef(0);
+    const openQuickTerminal = useCallback((spec) => {
+        const id = `adhoc-${++adhocSeq.current}`;
+        const title =
+            spec.port && spec.port !== 22
+                ? `${spec.user}@${spec.host}:${spec.port}`
+                : `${spec.user}@${spec.host}`;
+        setTabs((ts) => [...ts, { id, kind: "terminal", host: spec.host, port: spec.port, user: spec.user, title }]);
+        setActiveTab(id);
+    }, []);
+
     const closeTab = useCallback((id) => {
         const current = tabsRef.current;
         const idx = current.findIndex((t) => t.id === id);
@@ -211,6 +225,7 @@ export function AppProvider({ children }) {
             activeTab,
             openTerminal,
             openPage,
+            openQuickTerminal,
             closeTab,
             selectTab,
             dialog,
@@ -233,6 +248,7 @@ export function AppProvider({ children }) {
             activeTab,
             openTerminal,
             openPage,
+            openQuickTerminal,
             closeTab,
             selectTab,
             dialog,

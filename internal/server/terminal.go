@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	sshclient "sshclient/ssh"
 	"sshclient/storage"
 )
 
@@ -22,6 +23,11 @@ type WebSession struct {
 	client *ssh.Client
 	sess   *ssh.Session
 	stdin  io.WriteCloser
+
+	// ownedClient marks an ad-hoc (quick connect) client that this session owns
+	// and must close, rather than a pooled client shared with other sessions.
+	ownedClient bool
+	clientOnce  sync.Once
 
 	mu     sync.Mutex
 	closed bool
@@ -52,6 +58,12 @@ type openTerminalParams struct {
 	Cols         int    `json:"cols"`
 	Rows         int    `json:"rows"`
 	Password     string `json:"password"` // 用户本次输入的密码（可选）
+
+	// Ad-hoc connection (quick connect): used when ConnectionID is empty, so a
+	// one-off session can be opened without saving a connection first.
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	User string `json:"user"`
 }
 
 func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -59,15 +71,49 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	conn, err := s.findConnection(p.ConnectionID)
-	if err != nil {
-		return nil, err
+
+	var (
+		conn   *storage.Connection
+		client *ssh.Client
+		err    error
+		adhoc  bool
+	)
+
+	switch {
+	case p.ConnectionID != "":
+		conn, err = s.findConnection(p.ConnectionID)
+		if err != nil {
+			return nil, err
+		}
+		var passPtr *string
+		if p.Password != "" {
+			passPtr = &p.Password
+		}
+		client, err = s.pool.Get(conn, passPtr)
+
+	case p.Host != "":
+		// Quick connect: dial a temporary host and own the client, so it is
+		// closed with the session instead of being kept in the pool.
+		if p.User == "" {
+			return nil, fmt.Errorf("请填写用户名")
+		}
+		if p.Port == 0 {
+			p.Port = 22
+		}
+		adhoc = true
+		conn = &storage.Connection{
+			ID:   "adhoc-" + storage.NewID(),
+			Name: fmt.Sprintf("%s@%s", p.User, p.Host),
+			Host: p.Host,
+			Port: p.Port,
+			User: p.User,
+		}
+		client, err = sshclient.DialAdhoc(p.Host, p.Port, p.User, p.Password, s.allKeyMaterials())
+
+	default:
+		return nil, fmt.Errorf("缺少连接信息")
 	}
-	var passPtr *string
-	if p.Password != "" {
-		passPtr = &p.Password
-	}
-	client, err := s.pool.Get(conn, passPtr)
+
 	if err != nil {
 		// An authentication failure means the UI should prompt for a password
 		// and retry, instead of showing a dead-end error.
@@ -76,6 +122,7 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 		}
 		return nil, err
 	}
+
 	if p.Cols <= 0 {
 		p.Cols = 80
 	}
@@ -109,11 +156,12 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 	}
 
 	ws := &WebSession{
-		id:     storage.NewID(),
-		client: client,
-		sess:   sess,
-		stdin:  stdin,
-		done:   make(chan struct{}),
+		id:          storage.NewID(),
+		client:      client,
+		sess:        sess,
+		stdin:       stdin,
+		done:        make(chan struct{}),
+		ownedClient: adhoc,
 	}
 
 	// Bind the session to this browser connection for output and lifecycle.
@@ -250,6 +298,7 @@ func (ws *WebSession) Close() {
 	if ws.sess != nil {
 		_ = ws.sess.Close()
 	}
+	ws.closeOwnedClient()
 }
 
 func (ws *WebSession) close() {
@@ -260,6 +309,18 @@ func (ws *WebSession) close() {
 	}
 	ws.closed = true
 	ws.mu.Unlock()
+	ws.closeOwnedClient()
+}
+
+// closeOwnedClient closes the SSH client of an ad-hoc session. Pooled clients
+// are owned by the pool and must not be closed here.
+func (ws *WebSession) closeOwnedClient() {
+	if !ws.ownedClient || ws.client == nil {
+		return
+	}
+	ws.clientOnce.Do(func() {
+		_ = ws.client.Close()
+	})
 }
 
 type terminalInputParams struct {

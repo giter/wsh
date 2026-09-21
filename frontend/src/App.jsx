@@ -1,10 +1,10 @@
 import { useCallback, useEffect } from "react";
 import { useApp } from "./state/store.jsx";
 import TitleBar from "./components/TitleBar.jsx";
+import QuickConnectBar from "./components/QuickConnectBar.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import TabBar from "./components/TabBar.jsx";
 import TerminalTab from "./components/TerminalTab.jsx";
-import ConnectionsPage from "./components/ConnectionsPage.jsx";
 import SftpPage from "./components/SftpPage.jsx";
 import TunnelsPage from "./components/TunnelsPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
@@ -62,9 +62,6 @@ function TabPane({ tab, active }) {
             break;
         case "tunnels":
             body = <TunnelsPage />;
-            break;
-        case "connections":
-            body = <ConnectionsPage />;
             break;
         default:
             body = null;
@@ -148,9 +145,6 @@ export default function App() {
                 if (code === "KeyN") {
                     e.preventDefault();
                     app.openDialog({ type: "connection", conn: null });
-                } else if (code === "KeyM") {
-                    e.preventDefault();
-                    navigateTo("connections");
                 } else if (code === "KeyQ") {
                     e.preventDefault();
                     app.appAction("quit");
@@ -196,6 +190,7 @@ export default function App() {
                 <div id="app-body">
                     {!route && <Sidebar />}
                     <main id="main">
+                        {!route && <QuickConnectBar />}
                         {!route && <TabBar />}
                         <div id="content">{content}</div>
                     </main>

@@ -2,7 +2,6 @@ import { useApp } from "../state/store.jsx";
 import ConnectionDialog from "./ConnectionDialog.jsx";
 import KeyDialog from "./KeyDialog.jsx";
 import TunnelDialog from "./TunnelDialog.jsx";
-import MoveConnDialog from "./MoveConnDialog.jsx";
 import { AboutDialog, ConfirmDialog, NoticeDialog, PasswordDialog, PromptDialog } from "./SimpleDialogs.jsx";
 
 // DialogHost renders the single active dialog requested through the store's
@@ -18,8 +17,6 @@ export default function DialogHost() {
             return <KeyDialog item={dialog.key} onSaved={dialog.onSaved} onClose={closeDialog} />;
         case "tunnel":
             return <TunnelDialog tunnel={dialog.tunnel} onSaved={dialog.onSaved} onClose={closeDialog} />;
-        case "moveConn":
-            return <MoveConnDialog conn={dialog.conn} onClose={closeDialog} />;
         case "confirm":
             return (
                 <ConfirmDialog

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -67,12 +68,32 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		noCacheHeader(w)
+		if _, err := fs.Stat(sub, "index.html"); err != nil {
+			// The frontend was never built into the embed FS. Say so plainly
+			// instead of returning a bare 404 in the app window.
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, frontendNotBuiltPage)
+			return
+		}
 		http.ServeFileFS(w, r, sub, "index.html")
 	})
 
 	mux.HandleFunc("/ws", s.handleWS)
 	return mux
 }
+
+// frontendNotBuiltPage is shown when the embedded frontend is missing, which
+// happens when the binary is built without running the frontend build first.
+const frontendNotBuiltPage = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>wsh</title></head>
+<body style="font-family:system-ui,sans-serif;background:#1b1b22;color:#e7e7f0;padding:40px;line-height:1.7">
+<h2>前端未构建</h2>
+<p>这个二进制里没有打包前端资源。请先构建前端再重新编译：</p>
+<pre style="background:#282834;padding:12px 14px;border-radius:8px">cd frontend &amp;&amp; bun install &amp;&amp; bun run build
+go build -o wsh .</pre>
+<p>或直接使用 <code>./run.sh</code>（它会先构建前端）。</p>
+</body></html>`
 
 // noCache wraps an http.Handler with Cache-Control: no-cache headers.
 func noCache(h http.Handler) http.Handler {

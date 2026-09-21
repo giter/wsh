@@ -1,7 +1,7 @@
 import { useApp } from "../state/store.jsx";
 
 export default function TabBar() {
-    const { tabs, activeTab, selectTab, closeTab } = useApp();
+    const { tabs, activeTab, selectTab, closeTab, openDialog } = useApp();
 
     return (
         <div id="tabbar">
@@ -21,6 +21,9 @@ export default function TabBar() {
                     </button>
                 </div>
             ))}
+            <button className="tab-add" title="新建连接" onClick={() => openDialog({ type: "connection", conn: null })}>
+                ＋
+            </button>
         </div>
     );
 }

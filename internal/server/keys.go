@@ -160,3 +160,17 @@ func (s *Server) findKey(id string) (*storage.SSHKey, error) {
 	}
 	return nil, fmt.Errorf("密钥不存在")
 }
+
+// allKeyMaterials decrypts every managed key so an ad-hoc (quick connect)
+// session can try them, the way the ssh client tries every identity.
+func (s *Server) allKeyMaterials() []sshclient.KeyMaterial {
+	var out []sshclient.KeyMaterial
+	for _, k := range s.store.Keys() {
+		pem, passphrase, err := s.store.KeyMaterial(k.ID)
+		if err != nil || pem == "" {
+			continue
+		}
+		out = append(out, sshclient.KeyMaterial{PEM: pem, Passphrase: passphrase})
+	}
+	return out
+}

@@ -58,6 +58,43 @@ func Dial(c *storage.Connection, password string, resolve KeyResolver) (*ssh.Cli
 	return ssh.Dial("tcp", addr, cfg)
 }
 
+// KeyMaterial is decrypted private key material ready for authentication.
+type KeyMaterial struct {
+	PEM        string
+	Passphrase string
+}
+
+// DialAdhoc establishes a client for a temporary (unsaved) host, as used by the
+// quick-connect bar. As with saved connections, keys are tried before the
+// password so a key-only server still works.
+func DialAdhoc(host string, port int, user, password string, keys []KeyMaterial) (*ssh.Client, error) {
+	cfg := &ssh.ClientConfig{
+		User:            user,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         15 * time.Second,
+	}
+
+	for _, k := range keys {
+		if k.PEM == "" {
+			continue
+		}
+		if signer, err := parseSigner([]byte(k.PEM), k.Passphrase); err == nil {
+			cfg.Auth = append(cfg.Auth, ssh.PublicKeys(signer))
+		}
+	}
+	if password != "" {
+		cfg.Auth = append(cfg.Auth, ssh.Password(password))
+	}
+	if len(cfg.Auth) == 0 {
+		return nil, fmt.Errorf("no authentication method configured for %s", host)
+	}
+
+	if port == 0 {
+		port = 22
+	}
+	return ssh.Dial("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)), cfg)
+}
+
 // signerFor returns the first usable signer for the profile: a managed key
 // referenced by ID, then a local identity file. It returns nil when neither is
 // configured or could be loaded.

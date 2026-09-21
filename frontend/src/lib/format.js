@@ -56,3 +56,43 @@ export function triggerDownload(name, bytes) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+
+// parseQuickConnect parses an Xshell-style quick connect address. Accepted:
+//   ssh://user@host:port, user@host:port, host:port, user@host, host
+// Returns {user, host, port} (port defaults to 22), or null when no host is
+// present. The user falls back to defaultUser when the address omits it.
+export function parseQuickConnect(input, defaultUser = "") {
+    let s = String(input || "").trim();
+    if (!s) return null;
+    s = s.replace(/^ssh:\/\//i, "").replace(/\/+$/, "");
+
+    let user = "";
+    const at = s.lastIndexOf("@");
+    if (at >= 0) {
+        user = s.slice(0, at);
+        s = s.slice(at + 1);
+    }
+
+    let host = s;
+    let port = 0;
+    const bracketed = s.match(/^\[([^\]]+)\](?::(\d+))?$/); // [::1]:22
+    if (bracketed) {
+        host = bracketed[1];
+        port = parseInt(bracketed[2] || "0", 10) || 0;
+    } else {
+        const colon = s.lastIndexOf(":");
+        if (colon > 0) {
+            host = s.slice(0, colon);
+            port = parseInt(s.slice(colon + 1), 10) || 0;
+        }
+    }
+
+    host = host.trim();
+    if (!host) return null;
+    if (!user) user = defaultUser || "";
+    return {
+        user: user.trim(),
+        host,
+        port: port > 0 && port <= 65535 ? port : 22,
+    };
+}

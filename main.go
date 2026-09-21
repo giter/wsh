@@ -51,6 +51,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("embed: %v", err)
 	}
+	if _, err := fs.Stat(webSub, "index.html"); err != nil {
+		log.Printf("警告：二进制内没有前端资源，请先运行 `cd frontend && bun run build` 再重新编译")
+	}
 
 	srv := server.NewServer(store, pool, tm, webSub)
 	handler := srv.Handler()

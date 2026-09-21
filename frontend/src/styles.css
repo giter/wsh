@@ -150,10 +150,10 @@ html, body {
 }
 .menu-dropdown .sep { height: 1px; margin: 5px 6px; background: var(--border); }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Sidebar: session manager (Xshell style) ---------- */
 #sidebar {
-  width: 220px;
-  flex: 0 0 220px;
+  width: 260px;
+  flex: 0 0 260px;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -165,7 +165,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 10px;
+  padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
 }
 .logo-dot {
@@ -177,6 +177,27 @@ html, body {
   font-weight: 700;
   letter-spacing: .3px;
 }
+
+.sidebar-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.side-mini {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.side-mini:hover { background: var(--panel-hi); border-color: var(--accent); color: var(--accent); }
+.side-mini.primary { background: var(--accent); color: #062; border-color: transparent; font-weight: 600; }
+.side-mini.primary:hover { background: var(--accent-2); color: #062; }
 
 #tree {
   flex: 1;
@@ -207,27 +228,77 @@ html, body {
 
 .tree-row.branch { font-weight: 600; color: var(--text); }
 .tree-row.conn .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
-.tree-row.action { color: var(--faint); }
-.tree-row.action:hover { color: var(--accent); }
-
+.tree-row.conn.selected { background: var(--panel-hi); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
 .tree-children { padding-left: 14px; }
+.tree-empty { color: var(--faint); font-size: 12px; padding: 4px 10px; }
+.tree-sep { height: 1px; background: var(--border); margin: 8px 6px; }
 
-#sidebar-footer {
-  padding: 10px;
-  border-top: 1px solid var(--border);
-}
-.side-btn {
-  width: 100%;
-  padding: 8px 10px;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+/* Folder actions revealed on hover. */
+.tree-row .row-actions-inline { display: none; gap: 2px; margin-left: auto; }
+.tree-row:hover .row-actions-inline { display: flex; }
+.row-actions-inline button {
+  background: transparent;
+  border: none;
+  color: var(--faint);
   cursor: pointer;
-  text-align: left;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
 }
-.side-btn:hover { background: var(--panel-hi); border-color: var(--accent); color: var(--accent); }
+.row-actions-inline button:hover { color: var(--text); background: var(--border); }
+.row-actions-inline button.danger:hover { color: var(--danger); }
+
+/* Properties pane for the selected connection. */
+#sidebar-details {
+  flex: 0 0 auto;
+  max-height: 46%;
+  overflow-y: auto;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.det-title {
+  font-size: 11px;
+  letter-spacing: .5px;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
+.det-row { display: flex; gap: 8px; padding: 3px 0; font-size: 12px; }
+.det-k { flex: 0 0 52px; color: var(--dim); }
+.det-v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.det-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+/* ---------- Quick connect (Xshell style) ----------
+ * One-off sessions from an address, without saving a connection. */
+#quick-connect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--border);
+}
+#quick-connect .qc-label {
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+#quick-connect input {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+}
+#quick-connect .btn { flex: 0 0 auto; }
 
 /* ---------- Main ---------- */
 #main {
@@ -284,6 +355,19 @@ html, body {
   cursor: pointer;
 }
 .tab .tab-close:hover { color: var(--danger); background: rgba(244,63,94,.12); }
+
+/* "New connection" button at the end of the tab strip (Xshell style). */
+.tab-add {
+  flex: 0 0 auto;
+  width: 30px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--faint);
+  font-size: 15px;
+  cursor: pointer;
+}
+.tab-add:hover { background: var(--panel); color: var(--accent); }
 
 #content {
   flex: 1;
@@ -450,7 +534,7 @@ label.field > span { display: block; margin-bottom: 5px; color: var(--dim); font
 /* ---------- Global font zoom ----------
  * These override fixed px sizes so Ctrl+/-/, zoom (which sets the html
  * font-size) propagates to buttons, inputs, tabs and list text. */
-button.btn, input, select, textarea, .side-btn { font-size: inherit; }
+button.btn, input, select, textarea { font-size: inherit; }
 .tab-title { font-size: 0.96em; }
 .row .row-sub { font-size: 0.92em; }
 .badge { font-size: 0.85em; }
