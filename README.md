@@ -110,6 +110,22 @@ sudo apt install gcc-mingw-w64-x86-64   # 交叉工具链
 > 与快捷方式使用；窗口/任务栏图标则由 `icon_windows.go` 在运行时设置，因为 Wails v3 的
 > Windows 后端把窗口类图标写死为系统默认图标（`IDI_APPLICATION`）。
 
+### macOS（.app）
+
+macOS 版依赖系统自带的 WKWebView，**必须在 macOS 上构建**：Wails v3 需要 CGO 链接
+Cocoa / WebKit，无法从 Linux / Windows 交叉编译。
+
+```bash
+xcode-select --install       # 首次需要命令行工具（clang / sips / iconutil）
+./build.sh darwin            # 构建前端 + 打包 wsh.app
+open wsh.app                 # 或直接双击
+```
+
+> 脚本会把可执行文件、`Info.plist` 与由 `build/icon.png` 生成的 `icon.icns` 组装成
+> `wsh.app` 应用包，并做 ad-hoc 签名（Apple Silicon 上运行二进制的最低要求）。
+> 默认按本机架构构建，需要指定架构时用 `GOARCH=amd64 ./build.sh darwin`。
+> 未签名 / 未公证的包分发给别人时，对方首次打开需右键 →「打开」。
+
 ## 使用
 
 启动后程序在 `127.0.0.1` 起一个本地服务（默认随机端口，`-port` 可固定），
