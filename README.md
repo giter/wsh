@@ -20,22 +20,22 @@
 ## 架构
 
 ```
-Wails v3 桌面窗口 (跨平台 WebView 容器，窗口/托盘/菜单等桌面能力)
+Wails v3 桌面窗口 (跨平台 WebView 容器，窗口/菜单等桌面能力)
   └─ Go 后端 (复用 SSH / SFTP / 隧道 / 存储逻辑)
        └─ 本地 HTTP + WebSocket 服务 (仅绑定 127.0.0.1)
-            └─ Web 前端 (go:embed 进单二进制，离线可跑)
+            └─ React 前端 (构建产物 go:embed 进单二进制，离线可跑)
                  ├─ 左侧连接树
                  ├─ 顶部多标签
                  └─ xterm.js 终端 / SFTP 双栏 / 隧道管理
 ```
 
 前后端通过 WebSocket 交换 JSON 消息（RPC），终端输出以流式推送，键盘输入走请求。
-前端为原生 HTML/CSS/JS，**零 npm 依赖**，静态资源打包进可执行文件；
-Wails 只充当窗口外壳，加载本地服务的 URL，业务逻辑与协议完全不变。
+前端是 **React + Vite**（源码在 `frontend/`，构建产物输出到 `web/` 并被 `go:embed`
+打包进可执行文件，运行时不需要 Node）；Wails 只充当窗口外壳，加载本地服务的 URL。
 
 ## 构建
 
-Wails v3 需要 **Go 1.25+** 与平台 WebView 运行时（不再是纯 Go / 无 CGO）：
+需要 **Go 1.25+**、**bun**（构建前端）与平台 WebView 运行时（不再是纯 Go / 无 CGO）：
 
 - **Windows** — 自带 WebView2 Runtime（Win10/11 已内置）；交叉编译需 mingw-w64
 - **Linux** — 需 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`build-essential`、`pkg-config`
@@ -44,13 +44,48 @@ Wails v3 需要 **Go 1.25+** 与平台 WebView 运行时（不再是纯 Go / 无
 ```bash
 # Linux (Debian/Ubuntu 先装依赖)
 sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
+# 前端工具链
+curl -fsSL https://bun.sh/install | bash
 
-# 构建并启动（弹出原生窗口）
+# 构建前端 + 后端并启动（弹出原生窗口）
 ./run.sh
 
-# 只构建二进制
+# 只构建二进制（会先用 web/ 里已有的前端产物）
 go build -o wsh .
 ```
+
+### 前端开发（HMR 调试）
+
+```bash
+./dev.sh        # 后端(固定端口 17777) + Vite 开发服务器(5173)
+```
+
+然后在浏览器打开 <http://localhost:5173>：改前端代码即时热更新，无需重编译 Go。
+Vite 会把 `/ws` 代理到后端。想连自绘标题栏一起看，用
+<http://localhost:5173/?win=main>（拖动/缩放需要 Wails 运行时，浏览器里不生效，
+但菜单与窗口按钮的界面可以调）。
+
+单独跑时也可以用：
+
+```bash
+go run . -no-open -port 17777        # 后端，固定端口
+cd frontend && bun install && bun run dev
+```
+
+前端源码结构：
+
+```
+frontend/src/
+  main.jsx / App.jsx      入口与整体布局（标题栏 / 侧边栏 / 标签页）
+  lib/rpc.js              WebSocket RPC 客户端（请求 + 推送订阅）
+  lib/windowChrome.js     无边框窗口的拖动 / 缩放与窗口按钮
+  lib/format.js           格式化 / 路径 / base64 工具
+  state/store.jsx         全局状态（设置、连接、密钥、标签页、弹窗）
+  components/             各页面与组件（终端、SFTP、隧道、密钥…）
+```
+
+> `web/` 是构建产物（已提交，便于直接 `go build`）。修改前端后请重新
+> `cd frontend && bun run build`，或直接跑 `./run.sh`。
 
 ### Windows（.exe）
 
@@ -58,7 +93,7 @@ Windows 版依赖 WebView2 Runtime（Win10/11 自带），交叉编译需要 min
 
 ```bash
 sudo apt install gcc-mingw-w64-x86-64   # 交叉工具链
-./build_windows.sh                      # 生成 wsh.exe
+./build.sh                              # 构建前端 + 生成 wsh.exe
 ```
 
 > 生成的 `wsh.exe` 在 Windows 上启动后直接显示原生窗口，
@@ -66,8 +101,8 @@ sudo apt install gcc-mingw-w64-x86-64   # 交叉工具链
 
 ## 使用
 
-启动后程序在 `127.0.0.1` 随机端口起一个本地服务，并在 Wails 原生窗口
-中加载前端界面（`-no-open` 可只起服务不弹窗，便于调试）。
+启动后程序在 `127.0.0.1` 起一个本地服务（默认随机端口，`-port` 可固定），
+并在 Wails 原生窗口中加载前端界面（`-no-open` 可只起服务不弹窗，便于调试）。
 配置数据保存在系统配置目录下 `wsh/config.json`（密码与私钥均为加密后的密文），
 机器密钥保存在同目录 `secret.key`。
 
@@ -79,10 +114,11 @@ sudo apt install gcc-mingw-w64-x86-64   # 交叉工具链
 - **帮助** — 关于 wsh、开发者工具（DevTools）
 
 > Windows/Linux 下窗口是无边框的（frameless），系统标题栏和菜单栏都不再使用，
-> 由前端绘制一整套标题栏（品牌 + 菜单 + 最小化/最大化/关闭），见 `web/chrome.js`。
-> 窗口拖动/边缘缩放通过 Wails 的 `wails:drag` / `wails:resize:<edge>` 消息实现，
-> 窗口按钮、打开配置窗口、退出、DevTools 通过 RPC（`window.control` / `app.action`）
-> 转发给 Go 侧。macOS 保留系统边框与全局菜单。
+> 由前端绘制一整套标题栏（品牌 + 菜单 + 最小化/最大化/关闭），见
+> `frontend/src/lib/windowChrome.js`。窗口拖动/边缘缩放通过 Wails 的
+> `wails:drag` / `wails:resize:<edge>` 消息实现，窗口按钮、打开配置窗口、退出、
+> DevTools 通过 RPC（`window.control` / `app.action`）转发给 Go 侧。
+> macOS 保留系统边框与全局菜单。
 
 - 左侧「连接」树里点某台服务器即打开一个终端标签页
 - 连接失败（无密码 / 密码错误）会弹窗让你输入密码后重试

@@ -25,6 +25,7 @@ var webFS embed.FS
 
 func main() {
 	noOpen := flag.Bool("no-open", false, "start the server without opening the window (headless)")
+	portFlag := flag.Int("port", 0, "fixed local port to listen on (0 = pick a free one)")
 	flag.Parse()
 
 	store, err := storage.NewStore()
@@ -35,9 +36,10 @@ func main() {
 	pool := ssh.NewPool(store.KeyMaterial)
 	tm := ssh.NewTunnelManager(pool)
 
-	// Bind to an ephemeral localhost port so nothing conflicts and the
-	// service is only reachable from this machine.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	// Bind to a localhost port so nothing conflicts and the service is only
+	// reachable from this machine. A fixed port is useful during frontend
+	// development (`vite` proxies the RPC socket to it).
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *portFlag))
 	if err != nil {
 		log.Fatalf("listen: %v", err)
 	}
@@ -170,7 +172,7 @@ func main() {
 // menu is expected. Items that act on the web UI push a server.UIMsg through the
 // server's WebSocket channel (the frontend reacts in RPC.handlePush);
 // configuration features open in their own dedicated windows. Windows and Linux
-// use the in-app menu bar in web/menu.js instead.
+// use the in-app title bar in frontend/src/components/TitleBar.jsx instead.
 func buildMenu(app *application.App, srv *server.Server, win application.Window, baseURL string, store *storage.Store) *application.Menu {
 	menu := app.NewMenu()
 

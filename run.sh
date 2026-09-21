@@ -7,7 +7,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo ">> 构建 ..."
+# 前端：构建到 web/，随后被 go:embed 打进二进制。
+if command -v bun >/dev/null 2>&1; then
+  echo ">> 构建前端 (bun) ..."
+  (cd frontend && bun install --frozen-lockfile && bun run build)
+else
+  echo "警告：未找到 bun，跳过前端构建，直接使用 web/ 中已有的产物" >&2
+fi
+
+echo ">> 构建后端 ..."
 go build -o wsh .
 
 echo ">> 启动 ..."
