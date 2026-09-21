@@ -63,5 +63,8 @@ func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interf
 	if err := s.store.UpdateSettings(st); err != nil {
 		return nil, err
 	}
+	// Tell every open window (main window, settings window, ...) to re-apply
+	// the new options so font/theme changes show up immediately.
+	s.NotifyAll(UIMsg{Type: UISettingsChanged})
 	return toSettingsView(st), nil
 }

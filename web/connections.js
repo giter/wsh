@@ -10,6 +10,11 @@ async function refreshConnections() {
     } catch (e) {
         folderCache = [];
     }
+    try {
+        keyCache = await RPC.call("keys.list");
+    } catch (e) {
+        keyCache = [];
+    }
     renderTree();
 }
 
@@ -320,6 +325,10 @@ function openConnEditor(existing) {
     const savePw = document.createElement("input");
     savePw.type = "checkbox";
     const keyPath = input("可选：/path/to/id_rsa");
+    const keySel = document.createElement("select");
+    keySel.innerHTML =
+        `<option value="">不使用托管密钥</option>` +
+        keyCache.map((k) => `<option value="${k.id}">${esc(k.name)}</option>`).join("");
     const folderSel = document.createElement("select");
     folderSel.innerHTML =
         `<option value="">未分组</option>` +
@@ -332,6 +341,7 @@ function openConnEditor(existing) {
         user.value = existing.user;
         savePw.checked = existing.savePassword;
         keyPath.value = existing.privateKeyPath || "";
+        keySel.value = existing.keyId || "";
         folderSel.value = existing.folderId || "";
     }
 
@@ -346,7 +356,8 @@ function openConnEditor(existing) {
     ck.appendChild(savePw);
     ck.appendChild(document.createTextNode("保存密码（加密落盘）"));
     body.appendChild(ck);
-    f("私钥路径", keyPath);
+    f("密钥（优先使用）", keySel);
+    f("私钥文件路径", keyPath);
 
     const status = document.createElement("div");
     status.className = "status-msg";
@@ -363,6 +374,7 @@ function openConnEditor(existing) {
                 user: user.value,
                 password: password.value,
                 keyPath: keyPath.value,
+                keyId: keySel.value,
             });
             status.textContent = "连接成功 ✓";
         } catch (e) {
@@ -383,6 +395,7 @@ function openConnEditor(existing) {
             password: password.value,
             savePassword: savePw.checked,
             privateKeyPath: keyPath.value.trim(),
+            keyId: keySel.value,
         };
         try {
             await RPC.call("connections.save", payload);

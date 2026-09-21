@@ -15,14 +15,17 @@ type Pool struct {
 	clients map[string]*ssh.Client
 	dials   map[string]*sync.Once
 	pass    map[string]string // plaintext passwords provided for this run
+	keys    KeyResolver       // resolves managed keys for key auth
 }
 
-// NewPool returns an empty pool.
-func NewPool() *Pool {
+// NewPool returns an empty pool. keys resolves managed key IDs to decrypted
+// PEM material; it may be nil when no key manager is available.
+func NewPool(keys KeyResolver) *Pool {
 	return &Pool{
 		clients: make(map[string]*ssh.Client),
 		dials:   make(map[string]*sync.Once),
 		pass:    make(map[string]string),
+		keys:    keys,
 	}
 }
 
@@ -60,7 +63,7 @@ func (p *Pool) Get(c *storage.Connection, password *string) (*ssh.Client, error)
 		} else if saved, ok := p.pass[c.ID]; ok {
 			pw = saved
 		}
-		client, err = Dial(c, pw)
+		client, err = Dial(c, pw, p.keys)
 		if err != nil {
 			// Reset the gate so a later attempt (e.g. with the right password)
 			// can try again instead of being stuck on the failure.

@@ -32,7 +32,7 @@ func main() {
 		log.Printf("warning: cannot load config: %v", err)
 		store = &storage.Store{}
 	}
-	pool := ssh.NewPool()
+	pool := ssh.NewPool(store.KeyMaterial)
 	tm := ssh.NewTunnelManager(pool)
 
 	// Bind to an ephemeral localhost port so nothing conflicts and the
@@ -88,22 +88,76 @@ func main() {
 		},
 	})
 
-	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "wsh",
-		// On Windows/Linux the menu is per-window: this option makes the
-		// window display the application menu set via app.Menu.Set (macOS
-		// ignores it and always shows the global menu bar).
-		UseApplicationMenu: true,
+	// Windows/Linux run frameless and draw their own title bar (web/chrome.js)
+	// so the whole window matches the app theme; macOS keeps the native frame
+	// and the global menu.
+	frameless := runtime.GOOS != "darwin"
+
+	mainOpts := application.WebviewWindowOptions{
+		Name:               "main",
+		Title:              "wsh",
+		Frameless:          frameless,
+		UseApplicationMenu: !frameless,
 		Width:              1200,
 		Height:             800,
 		MinWidth:           800,
 		MinHeight:          600,
-		URL:                url,
-		DevToolsEnabled:    true, // enable the "开发者工具" menu item
-	})
+		// The "?win=" param tells the frontend which window it is, so its title
+		// bar can drive the right window over RPC.
+		URL:              url + "?win=main",
+		DevToolsEnabled:  true, // enable the "开发者工具" menu item
+		BackgroundColour: appBackground(isDarkTheme(store)),
+		Windows:          windowsChrome(isDarkTheme(store)),
+	}
+	if frameless {
+		mainOpts.Windows.DisableMenu = true
+	}
+	win := app.Window.NewWithOptions(mainOpts)
 	win.Center()
 
-	app.Menu.Set(buildMenu(app, srv, win))
+	if !frameless {
+		app.Menu.Set(buildMenu(app, srv, win, url, store))
+	}
+
+	// Let the web UI's own title bar drive native behaviour.
+	srv.SetAppActions(server.AppActions{
+		OpenSettings: func() {
+			application.InvokeAsync(func() {
+				openConfigWindow(app, url, "settings", "settings", "选项", 560, 660, isDarkTheme(store))
+			})
+		},
+		OpenKeys: func() {
+			application.InvokeAsync(func() {
+				openConfigWindow(app, url, "keys", "keys", "密钥管理", 820, 680, isDarkTheme(store))
+			})
+		},
+		Quit: func() { application.InvokeAsync(func() { app.Quit() }) },
+		OpenDevTools: func() {
+			application.InvokeAsync(func() { win.OpenDevTools() })
+		},
+		WindowControl: func(name, action string) interface{} {
+			var result interface{}
+			application.InvokeSync(func() {
+				// GetByName returns false once a window has been closed, so a
+				// stale request can never touch a destroyed window.
+				w, ok := app.Window.GetByName(name)
+				if !ok {
+					return
+				}
+				switch action {
+				case "minimise":
+					w.Minimise()
+				case "toggle-maximise":
+					w.ToggleMaximise()
+				case "close":
+					w.Close()
+				case "is-maximised":
+					result = w.IsMaximised()
+				}
+			})
+			return result
+		},
+	})
 
 	app.OnShutdown(shutdown)
 
@@ -112,16 +166,16 @@ func main() {
 	}
 }
 
-// buildMenu constructs the native menu bar (文件 / 视图 / 帮助). Items that
-// act on the web UI push a server.UIMsg through the server's WebSocket
-// channel; the frontend reacts in RPC.handlePush.
-func buildMenu(app *application.App, srv *server.Server, win application.Window) *application.Menu {
+// buildMenu constructs the native menu bar used on macOS, where a global app
+// menu is expected. Items that act on the web UI push a server.UIMsg through the
+// server's WebSocket channel (the frontend reacts in RPC.handlePush);
+// configuration features open in their own dedicated windows. Windows and Linux
+// use the in-app menu bar in web/menu.js instead.
+func buildMenu(app *application.App, srv *server.Server, win application.Window, baseURL string, store *storage.Store) *application.Menu {
 	menu := app.NewMenu()
 
-	// macOS: standard application menu (About / Quit live there).
-	if runtime.GOOS == "darwin" {
-		menu.AddRole(application.AppMenu)
-	}
+	// Standard application menu (About / Quit live there).
+	menu.AddRole(application.AppMenu)
 
 	fileMenu := menu.AddSubmenu("文件")
 	fileMenu.Add("新建连接…").
@@ -135,19 +189,18 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window)
 			srv.NotifyAll(server.UIMsg{Type: server.UINavigate, Page: "connections"})
 		})
 	fileMenu.AddSeparator()
-	if runtime.GOOS != "darwin" { // macOS already has Quit in the app menu
-		fileMenu.Add("退出").
-			SetAccelerator("CmdOrCtrl+Q").
-			OnClick(func(ctx *application.Context) {
-				app.Quit()
-			})
-	}
+	// Quit lives in the application menu role on macOS.
 
 	optionsMenu := menu.AddSubmenu("选项")
 	optionsMenu.Add("选项…").
 		SetAccelerator("CmdOrCtrl+Shift+,").
 		OnClick(func(ctx *application.Context) {
-			srv.NotifyAll(server.UIMsg{Type: server.UIOpenSettings})
+			openConfigWindow(app, baseURL, "settings", "settings", "选项", 560, 660, isDarkTheme(store))
+		})
+	optionsMenu.Add("密钥管理…").
+		SetAccelerator("CmdOrCtrl+Shift+K").
+		OnClick(func(ctx *application.Context) {
+			openConfigWindow(app, baseURL, "keys", "keys", "密钥管理", 820, 680, isDarkTheme(store))
 		})
 
 	viewMenu := menu.AddSubmenu("视图")
@@ -179,6 +232,86 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window)
 	})
 
 	return menu
+}
+
+// openConfigWindow opens (or focuses) a dedicated configuration window. The web
+// frontend renders the matching config page for the given hash route, so each
+// configuration feature runs in its own native window instead of a modal in the
+// main window.
+func openConfigWindow(app *application.App, baseURL, name, route, title string, width, height int, dark bool) {
+	if existing, ok := app.Window.GetByName(name); ok {
+		existing.Show()
+		existing.Focus()
+		return
+	}
+	// Configuration windows are frameless too, so they match the app theme.
+	frameless := runtime.GOOS != "darwin"
+	opts := application.WebviewWindowOptions{
+		Name:      name,
+		Title:     title,
+		Frameless: frameless,
+		URL:       baseURL + "/?win=" + name + "#" + route,
+		Width:     width, Height: height,
+		MinWidth:  380,
+		MinHeight: 420,
+		// Configuration windows keep the chrome minimal: no menu bar, so the
+		// per-window menu is not duplicated on Windows/Linux.
+		UseApplicationMenu: false,
+		BackgroundColour:   appBackground(dark),
+		Windows:            windowsChrome(dark),
+	}
+	if frameless {
+		opts.Windows.DisableMenu = true
+	}
+	w := app.Window.NewWithOptions(opts)
+	w.Center()
+	w.Focus()
+}
+
+// isDarkTheme reports whether the saved app theme is dark (the default).
+func isDarkTheme(store *storage.Store) bool {
+	return store.Settings().Theme != "light"
+}
+
+// appBackground is the app's background colour for the current theme, applied
+// to every window so there is no white (or dark) flash before the webview
+// paints the themed UI.
+func appBackground(dark bool) application.RGBA {
+	if dark {
+		return application.NewRGBA(0x1b, 0x1b, 0x22, 0xff) // --bg #1b1b22
+	}
+	return application.NewRGBA(0xf5, 0xf5, 0xf8, 0xff) // --bg #f5f5f8
+}
+
+// windowsChrome themes the native window frame so it matches the app's UI
+// instead of looking like a stock OS window. Only the Windows backend reads
+// these options; other platforms ignore them.
+func windowsChrome(dark bool) application.WindowsWindow {
+	mode := application.Light
+	var custom application.ThemeSettings
+	if dark {
+		mode = application.Dark
+		custom = application.ThemeSettings{
+			DarkModeActive: &application.WindowTheme{
+				TitleBarColour:  bgr(0x23, 0x23, 0x2d), // --sidebar #23232d
+				TitleTextColour: bgr(0xe7, 0xe7, 0xf0), // --text    #e7e7f0
+				BorderColour:    bgr(0x34, 0x34, 0x3f), // --border  #34343f
+			},
+			DarkModeInactive: &application.WindowTheme{
+				TitleBarColour:  bgr(0x1b, 0x1b, 0x22), // --bg  #1b1b22
+				TitleTextColour: bgr(0x9a, 0x9a, 0xa8), // --dim #9a9aa8
+				BorderColour:    bgr(0x34, 0x34, 0x3f),
+			},
+		}
+	}
+	return application.WindowsWindow{Theme: mode, CustomTheme: custom}
+}
+
+// bgr packs an #RRGGBB colour into the 0x00BBGGRR form that Wails/Windows
+// expects for native title-bar theming.
+func bgr(r, g, b uint32) *uint32 {
+	v := r | g<<8 | b<<16
+	return &v
 }
 
 // waitSignal blocks until the process receives a termination signal.

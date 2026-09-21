@@ -19,6 +19,15 @@ var router = map[string]handler{
 	"folders.save":   (*Server).handleSaveFolder,
 	"folders.delete": (*Server).handleDeleteFolder,
 
+	// ssh keys (key manager)
+	"keys.list":   (*Server).handleListKeys,
+	"keys.save":   (*Server).handleSaveKey,
+	"keys.delete": (*Server).handleDeleteKey,
+
+	// desktop shell actions (custom menu bar / title bar)
+	"app.action":     (*Server).handleAppAction,
+	"window.control": (*Server).handleWindowControl,
+
 	// settings
 	"settings.get":  (*Server).handleGetSettings,
 	"settings.save": (*Server).handleSaveSettings,

@@ -63,8 +63,13 @@ const RPC = {
             navigateTo(msg.page);
         } else if (msg.type === "ui.new-connection") {
             openConnEditor(null);
-        } else if (msg.type === "ui.open-settings") {
-            openSettings();
+        } else if (msg.type === "ui.settings-changed") {
+            // Another window changed the global options; re-apply them here.
+            loadSettings().catch(() => {});
+        } else if (msg.type === "ui.keys-changed") {
+            // The key manager changed; refresh connection + key caches so the
+            // connection editor sees the new key list.
+            refreshConnections().catch(() => {});
         } else if (msg.type === "zmodem.send-file") {
             showZmodemBar(msg.sessionId);
         } else if (msg.type === "zmodem.download-start") {
@@ -83,6 +88,69 @@ const RPC = {
         }
     },
 };
+
+// runAppAction asks the desktop shell to perform a native action (open a
+// configuration window, quit, toggle DevTools). In headless/browser mode there
+// is no shell, so the failure is surfaced in a dialog instead of being lost.
+function runAppAction(action) {
+    RPC.call("app.action", { action }).catch((e) => {
+        const body = document.createElement("div");
+        body.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+        Modal.open("操作不可用", body, [button("btn", "关闭", () => Modal.close())]);
+    });
+}
+
+// isTextInputFocused reports whether the caret is in the terminal or a form
+// field, where control characters must reach the shell instead of being
+// captured by the menu accelerators.
+function isTextInputFocused() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.closest && el.closest(".xterm")) return true;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
+// Keyboard accelerators for the in-app menu bar. Matching uses e.code so it is
+// layout independent; bare-letter shortcuts are suppressed while typing so the
+// terminal keeps receiving Ctrl+N/Ctrl+M/Ctrl+Q.
+function handleMenuShortcut(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (document.body.classList.contains("config-window")) return;
+    const code = e.code;
+    if (e.shiftKey) {
+        if (code === "KeyK") {
+            e.preventDefault();
+            runAppAction("keys");
+        } else if (code === "Comma") {
+            e.preventDefault();
+            runAppAction("settings");
+        }
+        return;
+    }
+    if (code === "Digit1") {
+        e.preventDefault();
+        navigateTo("home");
+    } else if (code === "Digit2") {
+        e.preventDefault();
+        navigateTo("sftp");
+    } else if (code === "Digit3") {
+        e.preventDefault();
+        navigateTo("tunnels");
+    } else if (!isTextInputFocused()) {
+        if (code === "KeyN") {
+            e.preventDefault();
+            openConnEditor(null);
+        } else if (code === "KeyM") {
+            e.preventDefault();
+            openConnectionsPage();
+        } else if (code === "KeyQ") {
+            e.preventDefault();
+            runAppAction("quit");
+        }
+    }
+}
+document.addEventListener("keydown", handleMenuShortcut);
 
 // navigateTo switches the visible page on native menu requests.
 function navigateTo(page) {
@@ -240,12 +308,39 @@ const Tabs = {
 /* ============================================================
  * Boot
  * ============================================================ */
+// configRoute returns the standalone configuration page requested via the URL
+// hash ("#settings" / "#keys"), or "" for the normal main window. Dedicated
+// configuration windows opened from the native menu load these routes.
+function configRoute() {
+    const route = (location.hash || "").replace(/^#/, "");
+    return route === "settings" || route === "keys" ? route : "";
+}
+
+// bootConfigWindow renders a single configuration page full-window (no sidebar
+// or tabs) for a dedicated configuration window.
+async function bootConfigWindow(route) {
+    await loadSettings();
+    const content = document.getElementById("content");
+    content.innerHTML = "";
+    if (route === "keys") renderKeysPage(content);
+    else renderSettingsPage(content);
+}
+
 (async function boot() {
+    const route = configRoute();
+    if (route) document.body.classList.add("config-window");
     try {
         await RPC.connect();
     } catch (e) {
         document.getElementById("content").innerHTML =
             `<div class="center-box"><div class="err">${esc(e.message)}</div></div>`;
+        return;
+    }
+    // Draw the custom title bar (frameless windows) before anything else so the
+    // window never looks like it has no chrome.
+    buildChrome();
+    if (route) {
+        await bootConfigWindow(route);
         return;
     }
     Tabs.showEmpty();

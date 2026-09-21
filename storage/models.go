@@ -16,8 +16,32 @@ type Connection struct {
 	SavePassword bool `json:"save_password"`
 	// PrivateKeyPath is an optional path to an identity file for key auth.
 	PrivateKeyPath string `json:"private_key_path,omitempty"`
+	// KeyID references a key managed by the key manager (storage.SSHKey).
+	// When set it is preferred for authentication at login time.
+	KeyID string `json:"key_id,omitempty"`
 	// Color is the accent color used to identify this connection in the UI.
 	Color string `json:"color"`
+}
+
+// SSHKey is a user-submitted private key kept encrypted at rest (same machine
+// key scheme as passwords). Connections reference it by ID for key auth.
+// The private material is never sent to the browser; only the derived public
+// key and its fingerprint are.
+type SSHKey struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Comment is an optional free-form note shown in the key list.
+	Comment string `json:"comment,omitempty"`
+	// EncryptedPrivateKey is the AES-GCM ciphertext (base64) of the PEM key.
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+	// EncryptedPassphrase is the ciphertext of the key passphrase, if any.
+	EncryptedPassphrase string `json:"encrypted_passphrase,omitempty"`
+	// PublicKey is the derived authorized_keys line (safe to display).
+	PublicKey string `json:"public_key,omitempty"`
+	// Fingerprint is the SHA256 fingerprint of the public key.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// KeyType is the SSH algorithm, e.g. "ssh-ed25519" or "ssh-rsa".
+	KeyType string `json:"key_type,omitempty"`
 }
 
 // Folder is a named group used to organize connections in the UI.

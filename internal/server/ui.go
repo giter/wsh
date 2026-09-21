@@ -6,8 +6,10 @@ const (
 	UINavigate = "ui.navigate"
 	// UINewConnection opens the connection editor modal.
 	UINewConnection = "ui.new-connection"
-	// UIOpenSettings opens the global options modal.
-	UIOpenSettings = "ui.open-settings"
+	// UISettingsChanged tells other windows to re-apply global options.
+	UISettingsChanged = "ui.settings-changed"
+	// UIKeysChanged tells other windows that the key manager changed.
+	UIKeysChanged = "ui.keys-changed"
 )
 
 // UIMsg is a generic push message sent from the native desktop shell (menu
@@ -16,7 +18,8 @@ const (
 //   - Type == UINavigate: Page names a page to open ("home", "connections",
 //     "sftp", "tunnels").
 //   - Type == UINewConnection: opens the connection editor modal.
-//   - Type == UIOpenSettings: opens the settings modal.
+//   - Type == UISettingsChanged: reload global options (font, theme, ...).
+//   - Type == UIKeysChanged: refresh the managed-key list.
 type UIMsg struct {
 	Type string `json:"type"`
 	Page string `json:"page,omitempty"`

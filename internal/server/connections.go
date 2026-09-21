@@ -20,6 +20,7 @@ type connView struct {
 	SavePassword   bool   `json:"savePassword"`
 	HasPassword    bool   `json:"hasPassword"`
 	PrivateKeyPath string `json:"privateKeyPath"`
+	KeyID          string `json:"keyId"`
 	Color          string `json:"color"`
 }
 
@@ -34,6 +35,7 @@ func toConnView(c *storage.Connection) connView {
 		SavePassword:   c.SavePassword,
 		HasPassword:    c.EncryptedPassword != "",
 		PrivateKeyPath: c.PrivateKeyPath,
+		KeyID:          c.KeyID,
 		Color:          c.Color,
 	}
 }
@@ -48,6 +50,7 @@ type saveConnParams struct {
 	Password       string `json:"password"`
 	SavePassword   bool   `json:"savePassword"`
 	PrivateKeyPath string `json:"privateKeyPath"`
+	KeyID          string `json:"keyId"`
 }
 
 func (s *Server) handleListConnections(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -91,6 +94,7 @@ func (s *Server) handleSaveConnection(c *wsClient, params json.RawMessage) (inte
 			EncryptedPassword: enc,
 			SavePassword:      p.SavePassword,
 			PrivateKeyPath:    p.PrivateKeyPath,
+			KeyID:             p.KeyID,
 			Color:             "#34D399",
 		}
 		if err := s.store.AddConnection(conn); err != nil {
@@ -116,6 +120,7 @@ func (s *Server) handleSaveConnection(c *wsClient, params json.RawMessage) (inte
 	existing.EncryptedPassword = enc
 	existing.SavePassword = p.SavePassword
 	existing.PrivateKeyPath = p.PrivateKeyPath
+	existing.KeyID = p.KeyID
 	if err := s.store.UpdateConnection(existing); err != nil {
 		return nil, err
 	}
@@ -146,6 +151,7 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 		User     string `json:"user"`
 		Password string `json:"password"`
 		KeyPath  string `json:"keyPath"`
+		KeyID    string `json:"keyId"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -158,6 +164,7 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 		Port:           p.Port,
 		User:           p.User,
 		PrivateKeyPath: p.KeyPath,
+		KeyID:          p.KeyID,
 	}
 	// If editing an existing connection and no password given, fall back to
 	// the stored one so the test works without re-typing.
@@ -166,7 +173,7 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 			conn.EncryptedPassword = existing.EncryptedPassword
 		}
 	}
-	client, err := sshclient.Dial(conn, p.Password)
+	client, err := sshclient.Dial(conn, p.Password, s.store.KeyMaterial)
 	if err != nil {
 		return nil, fmt.Errorf("连接失败：%w", err)
 	}

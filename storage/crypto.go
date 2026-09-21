@@ -48,8 +48,9 @@ func machineKey() ([]byte, error) {
 	return key, nil
 }
 
-// EncryptPassword protects a plaintext password for storage.
-func EncryptPassword(plain string) (string, error) {
+// EncryptSecret protects an arbitrary plaintext secret (password, private key,
+// passphrase, ...) for storage under the machine key.
+func EncryptSecret(plain string) (string, error) {
 	key, err := machineKey()
 	if err != nil {
 		return "", err
@@ -70,8 +71,8 @@ func EncryptPassword(plain string) (string, error) {
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// DecryptPassword recovers a plaintext password from its stored form.
-func DecryptPassword(encoded string) (string, error) {
+// DecryptSecret recovers a plaintext secret from its stored form.
+func DecryptSecret(encoded string) (string, error) {
 	if encoded == "" {
 		return "", nil
 	}
@@ -101,3 +102,9 @@ func DecryptPassword(encoded string) (string, error) {
 	}
 	return string(plain), nil
 }
+
+// EncryptPassword protects a plaintext password for storage.
+func EncryptPassword(plain string) (string, error) { return EncryptSecret(plain) }
+
+// DecryptPassword recovers a plaintext password from its stored form.
+func DecryptPassword(encoded string) (string, error) { return DecryptSecret(encoded) }

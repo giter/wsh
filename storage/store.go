@@ -34,6 +34,7 @@ type Store struct {
 	connections []*Connection
 	tunnels     []*Tunnel
 	folders     []*Folder
+	keys        []*SSHKey
 	settings    Settings
 	path        string
 	dirty       bool
@@ -58,6 +59,7 @@ func NewStore() (*Store, error) {
 		Connections []*Connection `json:"connections"`
 		Tunnels     []*Tunnel     `json:"tunnels"`
 		Folders     []*Folder     `json:"folders"`
+		Keys        []*SSHKey     `json:"keys"`
 	}
 	var d disk
 	if err := json.Unmarshal(raw, &d); err != nil {
@@ -66,6 +68,7 @@ func NewStore() (*Store, error) {
 	s.connections = d.Connections
 	s.tunnels = d.Tunnels
 	s.folders = d.Folders
+	s.keys = d.Keys
 
 	// Settings live in their own file so global options can be edited
 	// without touching connection state.
@@ -132,8 +135,9 @@ func (s *Store) Save() error {
 		Connections []*Connection `json:"connections"`
 		Tunnels     []*Tunnel     `json:"tunnels"`
 		Folders     []*Folder     `json:"folders"`
+		Keys        []*SSHKey     `json:"keys"`
 	}
-	d := disk{Connections: s.connections, Tunnels: s.tunnels, Folders: s.folders}
+	d := disk{Connections: s.connections, Tunnels: s.tunnels, Folders: s.folders, Keys: s.keys}
 	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
@@ -275,4 +279,73 @@ func (s *Store) DeleteFolder(id string) error {
 	}
 	s.mark()
 	return s.Save()
+}
+
+// Keys returns a copy of the managed key slice.
+func (s *Store) Keys() []*SSHKey {
+	out := make([]*SSHKey, len(s.keys))
+	copy(out, s.keys)
+	return out
+}
+
+// AddKey inserts a new managed key and persists.
+func (s *Store) AddKey(k *SSHKey) error {
+	s.keys = append(s.keys, k)
+	s.mark()
+	return s.Save()
+}
+
+// UpdateKey replaces a managed key by ID.
+func (s *Store) UpdateKey(k *SSHKey) error {
+	for i, existing := range s.keys {
+		if existing.ID == k.ID {
+			s.keys[i] = k
+			s.mark()
+			return s.Save()
+		}
+	}
+	return errors.New("key not found")
+}
+
+// DeleteKey removes a managed key and clears the reference from any connection
+// that used it, so no connection is left pointing at a missing key.
+func (s *Store) DeleteKey(id string) error {
+	kept := s.keys[:0]
+	for _, k := range s.keys {
+		if k.ID != id {
+			kept = append(kept, k)
+		}
+	}
+	s.keys = kept
+	for _, c := range s.connections {
+		if c.KeyID == id {
+			c.KeyID = ""
+		}
+	}
+	s.mark()
+	return s.Save()
+}
+
+// KeyMaterial decrypts a managed key for use as an SSH identity. It returns the
+// PEM-encoded private key and its passphrase (empty when the key is not
+// encrypted). It satisfies sshclient.KeyResolver.
+func (s *Store) KeyMaterial(id string) (string, string, error) {
+	for _, k := range s.keys {
+		if k.ID != id {
+			continue
+		}
+		pem, err := DecryptSecret(k.EncryptedPrivateKey)
+		if err != nil {
+			return "", "", err
+		}
+		var passphrase string
+		if k.EncryptedPassphrase != "" {
+			passphrase, err = DecryptSecret(k.EncryptedPassphrase)
+			if err != nil {
+				return "", "", err
+			}
+		}
+		return pem, passphrase, nil
+	}
+	return "", "", errors.New("key not found")
 }

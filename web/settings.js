@@ -46,16 +46,49 @@ function zoomFont(delta) {
     persistSettings();
 }
 
-function openSettings() {
+// renderSettingsPage builds the global options page for the dedicated settings
+// window (opened from the native menu, "#settings"). Font size and theme
+// preview live and can be reverted with「恢复」.
+function renderSettingsPage(container) {
+    const page = document.createElement("div");
+    page.className = "config-page";
+
+    // Header
+    const head = document.createElement("header");
+    head.className = "config-head";
+    head.innerHTML = `
+      <div class="config-head-icon">⚙</div>
+      <div class="config-head-text">
+        <h2>选项</h2>
+        <p>调整界面外观与新连接、隧道的默认值</p>
+      </div>`;
+    page.appendChild(head);
+
+    // Body
     const body = document.createElement("div");
-    const f = (label, input) => {
+    body.className = "config-body";
+    page.appendChild(body);
+
+    const field = (label, input) => {
         const l = document.createElement("label");
         l.className = "field";
         const s = document.createElement("span");
         s.textContent = label;
         l.appendChild(s);
         l.appendChild(input);
-        body.appendChild(l);
+        return l;
+    };
+    const card = (title, ...fields) => {
+        const sec = document.createElement("section");
+        sec.className = "card";
+        const h = document.createElement("h3");
+        h.textContent = title;
+        sec.appendChild(h);
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        fields.forEach((f) => grid.appendChild(f));
+        sec.appendChild(grid);
+        return sec;
     };
 
     const fontSize = input();
@@ -89,18 +122,22 @@ function openSettings() {
     tunRemote.max = "65535";
     tunRemote.value = settingsCache.tunnelRemotePort || 80;
 
-    f("字体大小 (px)", fontSize);
-    f("主题", theme);
-    f("默认端口（新连接）", defaultPort);
-    f("默认用户（新连接）", defaultUser);
-    f("隧道默认本地端口", tunLocal);
-    f("隧道默认远程端口", tunRemote);
+    body.appendChild(card("外观", field("字体大小 (px)", fontSize), field("主题", theme)));
+    body.appendChild(card("新连接默认值", field("默认端口", defaultPort), field("默认用户", defaultUser)));
+    body.appendChild(card("隧道默认值", field("本地端口", tunLocal), field("远程端口", tunRemote)));
 
+    // Footer
+    const foot = document.createElement("footer");
+    foot.className = "config-foot";
     const status = document.createElement("div");
     status.className = "status-msg";
-    body.appendChild(status);
+    const actions = document.createElement("div");
+    actions.className = "foot-actions";
+    foot.appendChild(status);
+    foot.appendChild(actions);
+    page.appendChild(foot);
 
-    // Live preview while editing (cancel restores the stored values).
+    // Live preview while editing (「恢复」restores the stored values).
     fontSize.addEventListener("input", () => {
         const v = parseInt(fontSize.value, 10);
         document.documentElement.style.fontSize = v >= 8 && v <= 32 ? v + "px" : "";
@@ -118,22 +155,25 @@ function openSettings() {
             tunnelLocalPort: parseInt(tunLocal.value, 10) || 0,
             tunnelRemotePort: parseInt(tunRemote.value, 10) || 0,
         };
+        status.classList.remove("err");
         try {
             settingsCache = await RPC.call("settings.save", payload);
             applySettings(settingsCache);
-            Modal.close();
+            status.textContent = "已保存";
         } catch (e) {
             status.classList.add("err");
             status.textContent = e.message;
         }
     });
-    Modal.open("选项", body, [
-        button("btn", "取消", () => {
-            applySettings(settingsCache);
-            Modal.close();
-        }),
-        save,
-    ]);
+    const reset = button("btn", "恢复", () => {
+        applySettings(settingsCache);
+        container.innerHTML = "";
+        renderSettingsPage(container);
+    });
+    actions.appendChild(reset);
+    actions.appendChild(save);
+
+    container.appendChild(page);
 }
 
 /* ============================================================
@@ -143,7 +183,11 @@ function openSettings() {
 document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const k = e.key;
-    if (k === "=" || k === "+" || k === ",") {
+    if (k === "=" || k === "+") {
+        e.preventDefault();
+        zoomFont(1);
+    } else if (k === "," && !e.shiftKey) {
+        // Ctrl/Cmd+, zooms; Ctrl/Cmd+Shift+, opens the options window (chrome.js).
         e.preventDefault();
         zoomFont(1);
     } else if (k === "-" || k === "_") {

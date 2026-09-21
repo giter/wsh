@@ -23,6 +23,10 @@ type Server struct {
 
 	web fs.FS // embedded web/ directory
 
+	// actions are desktop-shell callbacks the web UI can trigger over RPC
+	// (open config windows, quit, devtools). Unset in headless mode.
+	actions AppActions
+
 	sessionsMu sync.Mutex
 	sessions   map[string]*WebSession
 
