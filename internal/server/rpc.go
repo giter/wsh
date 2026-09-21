@@ -9,15 +9,18 @@ type handler func(s *Server, c *wsClient, params json.RawMessage) (interface{}, 
 // router maps method names to handlers.
 var router = map[string]handler{
 	// connections
-	"connections.list":   (*Server).handleListConnections,
-	"connections.save":   (*Server).handleSaveConnection,
-	"connections.delete": (*Server).handleDeleteConnection,
-	"connections.test":   (*Server).handleTestConnection,
+	"connections.list":    (*Server).handleListConnections,
+	"connections.save":    (*Server).handleSaveConnection,
+	"connections.delete":  (*Server).handleDeleteConnection,
+	"connections.test":    (*Server).handleTestConnection,
+	"connections.move":    (*Server).handleMoveConnection,
+	"connections.reorder": (*Server).handleReorderConnections,
 
 	// folders
-	"folders.list":   (*Server).handleListFolders,
-	"folders.save":   (*Server).handleSaveFolder,
-	"folders.delete": (*Server).handleDeleteFolder,
+	"folders.list":    (*Server).handleListFolders,
+	"folders.save":    (*Server).handleSaveFolder,
+	"folders.delete":  (*Server).handleDeleteFolder,
+	"folders.reorder": (*Server).handleReorderFolders,
 
 	// ssh keys (key manager)
 	"keys.list":   (*Server).handleListKeys,
@@ -27,6 +30,7 @@ var router = map[string]handler{
 	// desktop shell actions (custom menu bar / title bar)
 	"app.action":     (*Server).handleAppAction,
 	"window.control": (*Server).handleWindowControl,
+	"session.open":   (*Server).handleOpenSession,
 
 	// settings
 	"settings.get":  (*Server).handleGetSettings,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // configDir returns the directory where app state is kept, creating it if needed.
@@ -46,6 +47,13 @@ func NewStore() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	return LoadStore(path)
+}
+
+// LoadStore reads state from an explicit config path. Missing file means a fresh
+// store. It is separated from NewStore so tests (and future import/export) can
+// point the store at any file.
+func LoadStore(path string) (*Store, error) {
 	s := &Store{path: path, settings: defaultSettings()}
 
 	raw, err := os.ReadFile(path)
@@ -151,10 +159,12 @@ func (s *Store) Save() error {
 
 func (s *Store) mark() { s.dirty = true }
 
-// Connections returns a copy of the connection slice.
+// Connections returns a copy of the connection slice in display order (by
+// Order, with ties keeping their stored order).
 func (s *Store) Connections() []*Connection {
 	out := make([]*Connection, len(s.connections))
 	copy(out, s.connections)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Order < out[j].Order })
 	return out
 }
 
@@ -237,10 +247,12 @@ func (s *Store) DeleteTunnel(id string) error {
 	return s.Save()
 }
 
-// Folders returns a copy of the folder slice.
+// Folders returns a copy of the folder slice in display order (by Order, with
+// ties keeping their stored order).
 func (s *Store) Folders() []*Folder {
 	out := make([]*Folder, len(s.folders))
 	copy(out, s.folders)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Order < out[j].Order })
 	return out
 }
 
@@ -276,6 +288,101 @@ func (s *Store) DeleteFolder(id string) error {
 		if c.FolderID == id {
 			c.FolderID = ""
 		}
+	}
+	s.mark()
+	return s.Save()
+}
+
+// MoveConnection moves a connection into a folder (empty folderID = ungrouped)
+// and places it at position index within that folder, renumbering the affected
+// groups. It is what drag-and-drop in the session tree persists.
+func (s *Store) MoveConnection(id, folderID string, index int) error {
+	var moved *Connection
+	for _, c := range s.connections {
+		if c.ID == id {
+			moved = c
+			break
+		}
+	}
+	if moved == nil {
+		return errors.New("connection not found")
+	}
+
+	// Collect the destination group without the moved connection, so a move
+	// inside the same folder is a plain reorder.
+	group := make([]*Connection, 0, len(s.connections))
+	for _, c := range s.connections {
+		if c.ID != id && c.FolderID == folderID {
+			group = append(group, c)
+		}
+	}
+	if index < 0 || index > len(group) {
+		index = len(group)
+	}
+
+	moved.FolderID = folderID
+	group = append(group, nil)
+	copy(group[index+1:], group[index:])
+	group[index] = moved
+	for i, c := range group {
+		c.Order = i
+	}
+
+	s.mark()
+	return s.Save()
+}
+
+// ReorderConnections renumbers one group in the given order. IDs that are not in
+// the group are ignored, and any group member missing from ids keeps its stored
+// order at the end.
+func (s *Store) ReorderConnections(folderID string, ids []string) error {
+	rank := make(map[string]int, len(ids))
+	for i, id := range ids {
+		rank[id] = i
+	}
+	var group []*Connection
+	for _, c := range s.connections {
+		if c.FolderID == folderID {
+			group = append(group, c)
+		}
+	}
+	sort.SliceStable(group, func(i, j int) bool {
+		ri, iok := rank[group[i].ID]
+		rj, jok := rank[group[j].ID]
+		if iok != jok {
+			return iok
+		}
+		if iok && jok {
+			return ri < rj
+		}
+		return group[i].Order < group[j].Order
+	})
+	for i, c := range group {
+		c.Order = i
+	}
+	s.mark()
+	return s.Save()
+}
+
+// ReorderFolders renumbers the folders in the given order, ignoring unknown IDs.
+func (s *Store) ReorderFolders(ids []string) error {
+	rank := make(map[string]int, len(ids))
+	for i, id := range ids {
+		rank[id] = i
+	}
+	sort.SliceStable(s.folders, func(i, j int) bool {
+		ri, iok := rank[s.folders[i].ID]
+		rj, jok := rank[s.folders[j].ID]
+		if iok != jok {
+			return iok
+		}
+		if iok && jok {
+			return ri < rj
+		}
+		return s.folders[i].Order < s.folders[j].Order
+	})
+	for i, f := range s.folders {
+		f.Order = i
 	}
 	s.mark()
 	return s.Save()

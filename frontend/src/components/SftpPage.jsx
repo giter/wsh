@@ -13,7 +13,67 @@ export default function SftpPage() {
     const [status, setStatus] = useState({ msg: "选择连接以浏览远程文件", err: false });
     const fileRef = useRef(null);
 
+    // Credentials typed at a connect prompt. Many connections deliberately do
+    // not store a password, so the first SFTP call asks for one and the answer
+    // is reused for the rest of the window's lifetime. Held in a ref because it
+    // is read inside async callbacks that must see the latest value.
+    const credsRef = useRef({ connId: "", password: "", keyPassphrase: "" });
+
     const say = (msg, err = false) => setStatus({ msg, err });
+
+    // call runs an SFTP RPC, answering credential prompts transparently. The
+    // backend returns {needPassword} / {needPassphrase} instead of failing when
+    // the connection has no usable credentials; the user is asked once and the
+    // call is retried with (and remembered for) the typed secret.
+    const call = useCallback(
+        (method, params, promptState) => {
+            const creds = params.connId === credsRef.current.connId ? credsRef.current : { password: "", keyPassphrase: "" };
+            return rpc.call(method, { ...params, ...creds }).then((res) => {
+                if (!res || !res.needPassword && !res.needPassphrase) return res;
+
+                if (res.needPassphrase) {
+                    if (promptState?.passphrase) return Promise.reject(new Error(res.message || "需要口令"));
+                    return new Promise((resolve, reject) => {
+                        app.openDialog({
+                            type: "passphrase",
+                            message: res.message || "需要口令",
+                            onSubmit: async (pass) => {
+                                credsRef.current = { connId: params.connId, password: creds.password, keyPassphrase: pass };
+                                try {
+                                    resolve(await call(method, params, { ...promptState, passphrase: true }));
+                                } catch (e) {
+                                    reject(e);
+                                }
+                            },
+                            onCancel: () => reject(new Error("已取消")),
+                        });
+                    });
+                }
+
+                if (res.needPassword) {
+                    if (promptState?.password) return Promise.reject(new Error(res.message || "需要密码"));
+                    return new Promise((resolve, reject) => {
+                        app.openDialog({
+                            type: "password",
+                            message: res.message || "需要密码",
+                            onSubmit: async (pw) => {
+                                credsRef.current = { connId: params.connId, password: pw, keyPassphrase: creds.keyPassphrase };
+                                try {
+                                    resolve(await call(method, params, { ...promptState, password: true }));
+                                } catch (e) {
+                                    reject(e);
+                                }
+                            },
+                            onCancel: () => reject(new Error("已取消")),
+                        });
+                    });
+                }
+
+                return res;
+            });
+        },
+        [app],
+    );
 
     const loadLocal = useCallback(
         async (path) => {
@@ -34,11 +94,11 @@ export default function SftpPage() {
                 setRemote([]);
                 return;
             }
-            const res = await rpc.call("sftp.list", { connId: id, path });
+            const res = await call("sftp.list", { connId: id, path });
             setRemote(res.entries);
             setRemotePath(res.path);
         },
-        [connId],
+        [connId, call],
     );
 
     useEffect(() => {
@@ -65,6 +125,8 @@ export default function SftpPage() {
 
     const onSelectConn = async (id) => {
         setConnId(id);
+        // Switching connection invalidates any credential typed for the old one.
+        if (credsRef.current.connId !== id) credsRef.current = { connId: id, password: "", keyPassphrase: "" };
         if (!id) {
             setRemote([]);
             return;
@@ -83,7 +145,7 @@ export default function SftpPage() {
         say(`上传 ${file.name} …`);
         try {
             const buf = await file.arrayBuffer();
-            await rpc.call("sftp.upload", {
+            await call("sftp.upload", {
                 connId,
                 remoteDir: remotePath,
                 name: file.name,
@@ -101,7 +163,7 @@ export default function SftpPage() {
         const remoteFile = (remotePath === "/" ? "" : remotePath) + "/" + name;
         say(`下载 ${name} …`);
         try {
-            const res = await rpc.call("sftp.download", { connId, path: remoteFile });
+            const res = await call("sftp.download", { connId, path: remoteFile });
             triggerDownload(name, base64Decode(res.data));
             say(`已下载 ${name}`);
         } catch (e) {
@@ -115,7 +177,7 @@ export default function SftpPage() {
             title: "新建目录",
             label: "目录名",
             onSubmit: async (name) => {
-                await rpc.call("sftp.mkdir", { connId, parent: remotePath, name });
+                await call("sftp.mkdir", { connId, parent: remotePath, name });
                 loadRemote(remotePath).catch(() => {});
             },
         });

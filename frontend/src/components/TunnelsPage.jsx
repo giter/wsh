@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
 
 export default function TunnelsPage() {
     const app = useApp();
     const [tunnels, setTunnels] = useState([]);
+
+    // Credentials typed at a connect prompt, per connection. A tunnel rides on a
+    // saved connection, which may deliberately have no stored password; the
+    // secret is remembered for the rest of this window's lifetime.
+    const credsRef = useRef({});
 
     const refresh = useCallback(async () => {
         try {
@@ -18,10 +23,41 @@ export default function TunnelsPage() {
         refresh();
     }, [refresh]);
 
+    // startTunnel answers credential prompts: the backend returns {needPassword}
+    // / {needPassphrase} when the connection has no usable credentials, so the
+    // user is asked once instead of the tunnel failing outright.
+    const startTunnel = (t) => {
+        const creds = credsRef.current[t.connectionId] || {};
+        return rpc.call("tunnels.start", { id: t.id, ...creds }).then((res) => {
+            if (!res || (!res.needPassword && !res.needPassphrase)) return res;
+
+            return new Promise((resolve, reject) => {
+                const onSubmit = async (secret) => {
+                    const next =
+                        res.needPassphrase
+                            ? { ...creds, keyPassphrase: secret }
+                            : { ...creds, password: secret };
+                    credsRef.current = { ...credsRef.current, [t.connectionId]: next };
+                    try {
+                        resolve(await startTunnel(t));
+                    } catch (e) {
+                        reject(e);
+                    }
+                };
+                app.openDialog({
+                    type: res.needPassphrase ? "passphrase" : "password",
+                    message: res.message || (res.needPassphrase ? "需要口令" : "需要密码"),
+                    onSubmit,
+                    onCancel: () => reject(new Error("已取消")),
+                });
+            });
+        });
+    };
+
     const toggle = async (t) => {
         try {
             if (t.running) await rpc.call("tunnels.stop", { id: t.id });
-            else await rpc.call("tunnels.start", { id: t.id });
+            else await startTunnel(t);
             refresh();
         } catch (e) {
             app.openDialog({ type: "notice", title: "隧道操作失败", message: e.message });

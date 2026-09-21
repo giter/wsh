@@ -38,9 +38,9 @@ export default function DialogHost() {
                 />
             );
         case "password":
-            return <PasswordDialog message={dialog.message} onSubmit={dialog.onSubmit} onClose={closeDialog} />;
+            return <PasswordDialog message={dialog.message} onSubmit={dialog.onSubmit} onCancel={dialog.onCancel} onClose={closeDialog} />;
         case "passphrase":
-            return <PassphraseDialog message={dialog.message} onSubmit={dialog.onSubmit} onClose={closeDialog} />;
+            return <PassphraseDialog message={dialog.message} onSubmit={dialog.onSubmit} onCancel={dialog.onCancel} onClose={closeDialog} />;
         case "notice":
             return <NoticeDialog title={dialog.title} message={dialog.message} onClose={closeDialog} />;
         case "about":

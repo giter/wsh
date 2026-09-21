@@ -18,6 +18,7 @@ type connView struct {
 	Port           int    `json:"port"`
 	User           string `json:"user"`
 	FolderID       string `json:"folderId"`
+	Order          int    `json:"order"`
 	SavePassword   bool   `json:"savePassword"`
 	HasPassword    bool   `json:"hasPassword"`
 	PrivateKeyPath string `json:"privateKeyPath"`
@@ -33,6 +34,7 @@ func toConnView(c *storage.Connection) connView {
 		Port:           c.Port,
 		User:           c.User,
 		FolderID:       c.FolderID,
+		Order:          c.Order,
 		SavePassword:   c.SavePassword,
 		HasPassword:    c.EncryptedPassword != "",
 		PrivateKeyPath: c.PrivateKeyPath,
@@ -99,6 +101,11 @@ func (s *Server) handleSaveConnection(c *wsClient, params json.RawMessage) (inte
 			Color:             "#34D399",
 		}
 		if err := s.store.AddConnection(conn); err != nil {
+			return nil, err
+		}
+		// Append to the end of its folder so a new connection does not jump to
+		// the top of a group the user has arranged by hand.
+		if err := s.store.MoveConnection(conn.ID, p.FolderID, -1); err != nil {
 			return nil, err
 		}
 		return toConnView(conn), nil
@@ -202,6 +209,69 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 	}
 	_ = client.Close()
 	return "连接成功", nil
+}
+
+// moveConnectionParams is the payload of a drag-and-drop move in the session
+// tree: the connection, its destination folder ("" = ungrouped) and the index it
+// should occupy inside that folder.
+type moveConnectionParams struct {
+	ID       string `json:"id"`
+	FolderID string `json:"folderId"`
+	Index    int    `json:"index"`
+}
+
+func (s *Server) handleMoveConnection(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p moveConnectionParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if p.ID == "" {
+		return nil, fmt.Errorf("缺少连接 ID")
+	}
+	// An unknown folder would leave the connection invisible in the tree.
+	if p.FolderID != "" {
+		found := false
+		for _, f := range s.store.Folders() {
+			if f.ID == p.FolderID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("文件夹不存在")
+		}
+	}
+	if err := s.store.MoveConnection(p.ID, p.FolderID, p.Index); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (s *Server) handleReorderConnections(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		FolderID string   `json:"folderId"`
+		IDs      []string `json:"ids"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if err := s.store.ReorderConnections(p.FolderID, p.IDs); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (s *Server) handleReorderFolders(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if err := s.store.ReorderFolders(p.IDs); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (s *Server) findConnection(id string) (*storage.Connection, error) {

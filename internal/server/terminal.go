@@ -122,24 +122,8 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 	}
 
 	if err != nil {
-		// An encrypted managed key without a usable passphrase is resolved by
-		// prompting for that key's passphrase and retrying.
-		var pe *sshclient.PassphraseError
-		if errors.As(err, &pe) {
-			name := ""
-			if k, kerr := s.findKey(pe.KeyID); kerr == nil {
-				name = k.Name
-			}
-			msg := "该私钥已加密，请输入口令"
-			if name != "" {
-				msg = fmt.Sprintf("私钥「%s」已加密，请输入口令", name)
-			}
-			return map[string]interface{}{"needPassphrase": true, "keyId": pe.KeyID, "message": msg}, nil
-		}
-		// An authentication failure means the UI should prompt for a password
-		// and retry, instead of showing a dead-end error.
-		if needsPassword(err) {
-			return map[string]interface{}{"needPassword": true, "message": err.Error()}, nil
+		if prompt, ok := s.credentialPrompt(err); ok {
+			return prompt, nil
 		}
 		return nil, err
 	}
@@ -409,6 +393,36 @@ type terminalDataMsg struct {
 	Type      string `json:"type"`
 	SessionID string `json:"sessionId"`
 	Data      string `json:"data,omitempty"`
+}
+
+// credentialPrompt reports whether a dial error is one the UI can resolve by
+// asking the user for a credential. It returns the prompt payload to send back
+// ({needPassword} / {needPassphrase}) and true when a prompt applies.
+//
+//   - An encrypted managed key without a usable passphrase is resolved by
+//     prompting for that key's passphrase and retrying.
+//   - An authentication failure means the UI should prompt for a password and
+//     retry, instead of showing a dead-end error.
+func (s *Server) credentialPrompt(err error) (map[string]interface{}, bool) {
+	if err == nil {
+		return nil, false
+	}
+	var pe *sshclient.PassphraseError
+	if errors.As(err, &pe) {
+		name := ""
+		if k, kerr := s.findKey(pe.KeyID); kerr == nil {
+			name = k.Name
+		}
+		msg := "该私钥已加密，请输入口令"
+		if name != "" {
+			msg = fmt.Sprintf("私钥「%s」已加密，请输入口令", name)
+		}
+		return map[string]interface{}{"needPassphrase": true, "keyId": pe.KeyID, "message": msg}, true
+	}
+	if needsPassword(err) {
+		return map[string]interface{}{"needPassword": true, "message": err.Error()}, true
+	}
+	return nil, false
 }
 
 // needsPassword reports whether a dial error stems from missing or wrong

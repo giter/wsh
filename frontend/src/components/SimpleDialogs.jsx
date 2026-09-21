@@ -89,14 +89,20 @@ export function PromptDialog({ title, label, initial = "", onSubmit, onClose }) 
     );
 }
 
-export function PasswordDialog({ message, onSubmit, onClose }) {
+export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
     const [pw, setPw] = useState("");
     const submit = () => {
         onClose();
         onSubmit(pw);
     };
+    // Cancelling must be distinguishable from submitting, so callers awaiting a
+    // credential can stop waiting instead of hanging forever.
+    const cancel = () => {
+        onClose();
+        onCancel?.();
+    };
     return (
-        <Modal title="需要密码" onClose={onClose}>
+        <Modal title="需要密码" onClose={cancel}>
             <div className="status-msg err">{message}</div>
             <label className="field">
                 <input
@@ -115,7 +121,7 @@ export function PasswordDialog({ message, onSubmit, onClose }) {
                 />
             </label>
             <div className="modal-actions">
-                <button className="btn" onClick={onClose}>
+                <button className="btn" onClick={cancel}>
                     取消
                 </button>
                 <button className="btn primary" onClick={submit}>
@@ -129,14 +135,18 @@ export function PasswordDialog({ message, onSubmit, onClose }) {
 // PassphraseDialog asks for a managed key's passphrase at connect time. The
 // input stays in memory for the app run only; it is never persisted unless the
 // user opts in from the key manager.
-export function PassphraseDialog({ message, onSubmit, onClose }) {
+export function PassphraseDialog({ message, onSubmit, onClose, onCancel }) {
     const [pw, setPw] = useState("");
     const submit = () => {
         onClose();
         onSubmit(pw);
     };
+    const cancel = () => {
+        onClose();
+        onCancel?.();
+    };
     return (
-        <Modal title="需要口令" onClose={onClose}>
+        <Modal title="需要口令" onClose={cancel}>
             <div className="status-msg err">{message}</div>
             <label className="field">
                 <input
@@ -155,7 +165,7 @@ export function PassphraseDialog({ message, onSubmit, onClose }) {
                 />
             </label>
             <div className="modal-actions">
-                <button className="btn" onClick={onClose}>
+                <button className="btn" onClick={cancel}>
                     取消
                 </button>
                 <button className="btn primary" onClick={submit}>

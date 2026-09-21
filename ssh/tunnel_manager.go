@@ -1,7 +1,6 @@
 package sshclient
 
 import (
-	"fmt"
 	"sync"
 
 	"sshclient/storage"
@@ -27,9 +26,16 @@ func NewTunnelManager(pool *Pool) *TunnelManager {
 // The tunnel direction (local or remote) is taken from t.Direction; an empty
 // direction falls back to a local forward for backwards compatibility.
 func (tm *TunnelManager) Start(c *storage.Connection, t *storage.Tunnel) (Tunnel, error) {
-	client, err := tm.pool.Get(c, nil)
+	return tm.StartWithPassword(c, t, nil)
+}
+
+// StartWithPassword is Start with an optional password typed at a connect prompt
+// (used when the connection stores no password). A nil password falls back to
+// the saved/remembered credentials.
+func (tm *TunnelManager) StartWithPassword(c *storage.Connection, t *storage.Tunnel, password *string) (Tunnel, error) {
+	client, err := tm.pool.Get(c, password)
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, err
 	}
 
 	var tun Tunnel

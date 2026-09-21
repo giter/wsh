@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"sshclient/internal/server"
 	ssh "sshclient/ssh"
@@ -121,20 +122,54 @@ func main() {
 	applyWindowIcon(win)
 	win.Center()
 
+	// The main window is the app: closing it ends the process, even though the
+	// tool windows (file transfer, tunnels, options, keys) are windows of their
+	// own.
+	win.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		app.Quit()
+	})
+
 	if !frameless {
 		app.Menu.Set(buildMenu(app, srv, win, url, store))
 	}
 
-	// Let the web UI's own title bar drive native behaviour.
+	// Let the web UI's own title bar drive native behaviour. The session manager
+	// is a docked panel of the session window, so it needs no action of its own.
 	srv.SetAppActions(server.AppActions{
 		OpenSettings: func() {
 			application.InvokeAsync(func() {
-				openConfigWindow(app, url, "settings", "settings", "选项", 560, 660, isDarkTheme(store))
+				openToolWindow(app, url, toolWindow{
+					Name: "settings", Title: "选项",
+					Width: 560, Height: 660, MinWidth: 380, MinHeight: 420,
+					Dark: isDarkTheme(store),
+				})
 			})
 		},
 		OpenKeys: func() {
 			application.InvokeAsync(func() {
-				openConfigWindow(app, url, "keys", "keys", "密钥管理", 820, 680, isDarkTheme(store))
+				openToolWindow(app, url, toolWindow{
+					Name: "keys", Title: "密钥管理",
+					Width: 820, Height: 680, MinWidth: 380, MinHeight: 420,
+					Dark: isDarkTheme(store),
+				})
+			})
+		},
+		OpenSftp: func() {
+			application.InvokeAsync(func() {
+				openToolWindow(app, url, toolWindow{
+					Name: "sftp", Title: "文件传输",
+					Width: 900, Height: 620, MinWidth: 560, MinHeight: 400,
+					Dark: isDarkTheme(store),
+				})
+			})
+		},
+		OpenTunnels: func() {
+			application.InvokeAsync(func() {
+				openToolWindow(app, url, toolWindow{
+					Name: "tunnels", Title: "端口隧道",
+					Width: 760, Height: 560, MinWidth: 480, MinHeight: 360,
+					Dark: isDarkTheme(store),
+				})
 			})
 		},
 		Quit: func() { application.InvokeAsync(func() { app.Quit() }) },
@@ -174,9 +209,11 @@ func main() {
 
 // buildMenu constructs the native menu bar used on macOS, where a global app
 // menu is expected. Items that act on the web UI push a server.UIMsg through the
-// server's WebSocket channel (the frontend reacts in RPC.handlePush);
-// configuration features open in their own dedicated windows. Windows and Linux
-// use the in-app title bar in frontend/src/components/TitleBar.jsx instead.
+// server's WebSocket channel (the frontend reacts in RPC.handlePush); the tool
+// windows (file transfer, tunnels, options, keys) open in their own dedicated
+// windows. The session manager is a docked panel of the session window, so it is
+// toggled from the app UI (Ctrl+1) instead of being a window here. Windows and
+// Linux use the in-app title bar in frontend/src/components/TitleBar.jsx.
 func buildMenu(app *application.App, srv *server.Server, win application.Window, baseURL string, store *storage.Store) *application.Menu {
 	menu := app.NewMenu()
 
@@ -189,11 +226,6 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window,
 		OnClick(func(ctx *application.Context) {
 			srv.NotifyAll(server.UIMsg{Type: server.UINewConnection})
 		})
-	fileMenu.Add("连接管理…").
-		SetAccelerator("CmdOrCtrl+M").
-		OnClick(func(ctx *application.Context) {
-			srv.NotifyAll(server.UIMsg{Type: server.UINavigate, Page: "connections"})
-		})
 	fileMenu.AddSeparator()
 	// Quit lives in the application menu role on macOS.
 
@@ -201,29 +233,40 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window,
 	optionsMenu.Add("选项…").
 		SetAccelerator("CmdOrCtrl+Shift+,").
 		OnClick(func(ctx *application.Context) {
-			openConfigWindow(app, baseURL, "settings", "settings", "选项", 560, 660, isDarkTheme(store))
+			openToolWindow(app, baseURL, toolWindow{
+				Name: "settings", Title: "选项",
+				Width: 560, Height: 660, MinWidth: 380, MinHeight: 420,
+				Dark: isDarkTheme(store),
+			})
 		})
 	optionsMenu.Add("密钥管理…").
 		SetAccelerator("CmdOrCtrl+Shift+K").
 		OnClick(func(ctx *application.Context) {
-			openConfigWindow(app, baseURL, "keys", "keys", "密钥管理", 820, 680, isDarkTheme(store))
+			openToolWindow(app, baseURL, toolWindow{
+				Name: "keys", Title: "密钥管理",
+				Width: 820, Height: 680, MinWidth: 380, MinHeight: 420,
+				Dark: isDarkTheme(store),
+			})
 		})
 
 	viewMenu := menu.AddSubmenu("视图")
-	viewMenu.Add("连接").
-		SetAccelerator("CmdOrCtrl+1").
-		OnClick(func(ctx *application.Context) {
-			srv.NotifyAll(server.UIMsg{Type: server.UINavigate, Page: "home"})
-		})
 	viewMenu.Add("文件传输").
 		SetAccelerator("CmdOrCtrl+2").
 		OnClick(func(ctx *application.Context) {
-			srv.NotifyAll(server.UIMsg{Type: server.UINavigate, Page: "sftp"})
+			openToolWindow(app, baseURL, toolWindow{
+				Name: "sftp", Title: "文件传输",
+				Width: 900, Height: 620, MinWidth: 560, MinHeight: 400,
+				Dark: isDarkTheme(store),
+			})
 		})
 	viewMenu.Add("端口隧道").
 		SetAccelerator("CmdOrCtrl+3").
 		OnClick(func(ctx *application.Context) {
-			srv.NotifyAll(server.UIMsg{Type: server.UINavigate, Page: "tunnels"})
+			openToolWindow(app, baseURL, toolWindow{
+				Name: "tunnels", Title: "端口隧道",
+				Width: 760, Height: 560, MinWidth: 480, MinHeight: 360,
+				Dark: isDarkTheme(store),
+			})
 		})
 
 	helpMenu := menu.AddSubmenu("帮助")
@@ -240,31 +283,46 @@ func buildMenu(app *application.App, srv *server.Server, win application.Window,
 	return menu
 }
 
-// openConfigWindow opens (or focuses) a dedicated configuration window. The web
-// frontend renders the matching config page for the given hash route, so each
-// configuration feature runs in its own native window instead of a modal in the
-// main window.
-func openConfigWindow(app *application.App, baseURL, name, route, title string, width, height int, dark bool) {
-	if existing, ok := app.Window.GetByName(name); ok {
+// toolWindow describes one of the app's auxiliary windows (file transfer,
+// tunnels, options, key manager). Each is its own native window so it can be
+// opened, closed and rearranged independently of the terminal sessions, which is
+// how Xshell keeps its transfer UI out of the session window. The session
+// manager is not one of these: it is docked inside the session window.
+type toolWindow struct {
+	Name      string
+	Title     string
+	Width     int
+	Height    int
+	MinWidth  int
+	MinHeight int
+	Dark      bool
+}
+
+// openToolWindow opens (or focuses) an auxiliary window. The web frontend picks
+// the page to render from the "?win=" query parameter, so no route/hash is
+// needed and a window keeps its identity even if the hash changes.
+func openToolWindow(app *application.App, baseURL string, tw toolWindow) {
+	if existing, ok := app.Window.GetByName(tw.Name); ok {
 		existing.Show()
 		existing.Focus()
 		return
 	}
-	// Configuration windows are frameless too, so they match the app theme.
+	// Tool windows are frameless too, so they match the app theme.
 	frameless := runtime.GOOS != "darwin"
 	opts := application.WebviewWindowOptions{
-		Name:      name,
-		Title:     title,
+		Name:      tw.Name,
+		Title:     tw.Title,
 		Frameless: frameless,
-		URL:       baseURL + "/?win=" + name + "#" + route,
-		Width:     width, Height: height,
-		MinWidth:  380,
-		MinHeight: 420,
-		// Configuration windows keep the chrome minimal: no menu bar, so the
-		// per-window menu is not duplicated on Windows/Linux.
+		URL:       baseURL + "/?win=" + tw.Name,
+		Width:     tw.Width,
+		Height:    tw.Height,
+		MinWidth:  tw.MinWidth,
+		MinHeight: tw.MinHeight,
+		// Tool windows keep the chrome minimal: no menu bar, so the per-window
+		// menu is not duplicated on Windows/Linux.
 		UseApplicationMenu: false,
-		BackgroundColour:   appBackground(dark),
-		Windows:            windowsChrome(dark),
+		BackgroundColour:   appBackground(tw.Dark),
+		Windows:            windowsChrome(tw.Dark),
 	}
 	if frameless {
 		opts.Windows.DisableMenu = true

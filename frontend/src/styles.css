@@ -12,6 +12,9 @@
   --danger:    #f43f5e;
   --warn:      #fbbf50;
   --blue:      #60a5fa;
+  /* Terminal background. Kept as a variable so the terminal area follows the
+     xterm palette set in TerminalTab.jsx (see TERM_THEMES). */
+  --term-bg:   #111118;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -167,6 +170,20 @@ html, body {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
 }
+
+/* Collapses the docked session manager; menu bar / Ctrl+1 brings it back. */
+.panel-collapse {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.panel-collapse:hover { color: var(--text); background: var(--border); }
 .logo-dot {
   width: 10px; height: 10px;
   border-radius: 3px;
@@ -306,6 +323,7 @@ html, body {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 
 #tabbar {
@@ -398,7 +416,7 @@ html, body {
   flex: 1;
   min-height: 0;
   padding: 8px;
-  background: #111118;
+  background: var(--term-bg);
 }
 .term-wrap .xterm { height: 100%; }
 /* xterm.js 的 viewport 用浏览器默认滚动条（WebView2 上是浅色的，与主题不搭），
@@ -529,8 +547,8 @@ label.field > span { display: block; margin-bottom: 5px; color: var(--dim); font
   --danger:    #e11d48;
   --warn:      #d97706;
   --blue:      #2563eb;
+  --term-bg:   #ffffff;
 }
-:root[data-theme="light"] .term-wrap { background: #1a1a22; }
 
 /* ---------- Connection folders ---------- */
 .conn-folder { margin-bottom: 14px; }
@@ -570,10 +588,35 @@ button.btn, input, select, textarea { font-size: inherit; }
 }
 .zmodem-bar span { flex: 1; }
 
-/* ---------- Dedicated configuration windows ----------
- * Windows opened from the native menu (#settings / #keys) render a single
- * configuration page without the sidebar or tab bar. The layout is a header,
- * a scrollable body of section cards, and a footer action bar. */
+/* ---------- Tool rows in the session tree ----------
+ * File transfer and port forwarding open their own windows rather than a tab in
+ * the session window, so their rows advertise that with a trailing arrow. */
+.tree-row.tool .row-actions-inline.always { display: flex; font-size: 11px; }
+
+/* ---------- Drag and drop in the session tree ----------
+ * Rows are draggable; the drop indicator shows whether the item lands inside a
+ * folder or between two rows. */
+.tree-row.conn[draggable],
+.tree-row.branch[draggable] { cursor: grab; }
+.tree-row.conn[draggable]:active,
+.tree-row.branch[draggable]:active { cursor: grabbing; }
+
+/* Dim the row that is being dragged. */
+.tree-row:active { opacity: .6; }
+
+.tree-row.drop-into {
+  background: var(--panel-hi);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* The ungrouped branch is a drop target too, but never a drag source. */
+.tree-row.ungrouped { cursor: pointer; }
+
+/* ---------- Dedicated tool windows ----------
+ * File transfer, tunnels and the configuration pages render as a single page
+ * without the session manager or tab bar. */
 .config-window #sidebar,
 .config-window #tabbar { display: none; }
 .config-window #content { background: var(--bg); }

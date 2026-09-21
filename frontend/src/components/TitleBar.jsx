@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { WINDOW_NAME, hasCustomChrome, installWindowGestures, windowControl } from "../lib/windowChrome.js";
 
-// Per-window chrome configuration, keyed by the "?win=" value.
+// Per-window chrome configuration, keyed by the "?win=" value. Windows not
+// listed here (i.e. every dedicated tool window) show their own title.
 const CHROME = {
     main: { brand: true, menu: true },
+    sftp: { title: "文件传输" },
+    tunnels: { title: "端口隧道" },
     settings: { title: "选项" },
     keys: { title: "密钥管理" },
 };
@@ -19,7 +22,9 @@ const ICONS = {
     close: '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5" fill="none" stroke="currentColor"/></svg>',
 };
 
-export default function TitleBar({ navigateTo }) {
+// TitleBar draws the custom title bar for the frameless windows. The menu bar is
+// only drawn in the session window; the tool windows render just their title.
+export default function TitleBar() {
     const app = useApp();
     const [openMenu, setOpenMenu] = useState(null);
     const [maximised, setMaximised] = useState(false);
@@ -76,7 +81,7 @@ export default function TitleBar({ navigateTo }) {
         {
             label: "文件",
             items: [
-                { label: "新建连接", accel: "Ctrl+N", run: () => app.openDialog({ type: "connection", conn: null }) },
+                { label: "新建连接", accel: "Ctrl+N", run: () => app.appAction("new-connection") },
                 { sep: true },
                 { label: "退出", accel: "Ctrl+Q", run: () => app.appAction("quit") },
             ],
@@ -91,9 +96,9 @@ export default function TitleBar({ navigateTo }) {
         {
             label: "视图",
             items: [
-                { label: "连接", accel: "Ctrl+1", run: () => navigateTo("home") },
-                { label: "文件传输", accel: "Ctrl+2", run: () => navigateTo("sftp") },
-                { label: "端口隧道", accel: "Ctrl+3", run: () => navigateTo("tunnels") },
+                { label: "会话管理器", accel: "Ctrl+1", run: () => app.appAction("sessions") },
+                { label: "文件传输", accel: "Ctrl+2", run: () => app.appAction("sftp") },
+                { label: "端口隧道", accel: "Ctrl+3", run: () => app.appAction("tunnels") },
             ],
         },
         {

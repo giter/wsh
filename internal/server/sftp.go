@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 )
 
 type sftpEntry struct {
@@ -22,6 +21,11 @@ type sftpEntry struct {
 type sftpListParams struct {
 	ConnectionID string `json:"connId"`
 	Path         string `json:"path"`
+
+	// Credentials typed at a connect prompt. They are only sent when the stored
+	// connection has no usable password (or its saved one was rejected).
+	Password      string `json:"password,omitempty"`
+	KeyPassphrase string `json:"keyPassphrase,omitempty"`
 }
 
 func (s *Server) handleSftpList(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -29,9 +33,12 @@ func (s *Server) handleSftpList(c *wsClient, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	client, err := s.sftpClient(p.ConnectionID)
+	client, prompt, err := s.sftpClient(p.ConnectionID, p.Password, p.KeyPassphrase)
 	if err != nil {
 		return nil, err
+	}
+	if prompt != nil {
+		return prompt, nil
 	}
 	defer client.Close()
 
@@ -65,6 +72,9 @@ type sftpUploadParams struct {
 	RemoteDir    string `json:"remoteDir"`
 	Name         string `json:"name"`
 	Data         string `json:"data"` // base64
+
+	Password      string `json:"password,omitempty"`
+	KeyPassphrase string `json:"keyPassphrase,omitempty"`
 }
 
 func (s *Server) handleSftpUpload(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -76,9 +86,12 @@ func (s *Server) handleSftpUpload(c *wsClient, params json.RawMessage) (interfac
 	if err != nil {
 		return nil, fmt.Errorf("解码文件失败：%w", err)
 	}
-	client, err := s.sftpClient(p.ConnectionID)
+	client, prompt, err := s.sftpClient(p.ConnectionID, p.Password, p.KeyPassphrase)
 	if err != nil {
 		return nil, err
+	}
+	if prompt != nil {
+		return prompt, nil
 	}
 	defer client.Close()
 
@@ -101,6 +114,9 @@ func (s *Server) handleSftpUpload(c *wsClient, params json.RawMessage) (interfac
 type sftpDownloadParams struct {
 	ConnectionID string `json:"connId"`
 	Path         string `json:"path"`
+
+	Password      string `json:"password,omitempty"`
+	KeyPassphrase string `json:"keyPassphrase,omitempty"`
 }
 
 func (s *Server) handleSftpDownload(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -108,9 +124,12 @@ func (s *Server) handleSftpDownload(c *wsClient, params json.RawMessage) (interf
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	client, err := s.sftpClient(p.ConnectionID)
+	client, prompt, err := s.sftpClient(p.ConnectionID, p.Password, p.KeyPassphrase)
 	if err != nil {
 		return nil, err
+	}
+	if prompt != nil {
+		return prompt, nil
 	}
 	defer client.Close()
 
@@ -139,6 +158,9 @@ type sftpMkdirParams struct {
 	ConnectionID string `json:"connId"`
 	Parent       string `json:"parent"`
 	Name         string `json:"name"`
+
+	Password      string `json:"password,omitempty"`
+	KeyPassphrase string `json:"keyPassphrase,omitempty"`
 }
 
 func (s *Server) handleSftpMkdir(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -146,9 +168,12 @@ func (s *Server) handleSftpMkdir(c *wsClient, params json.RawMessage) (interface
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	client, err := s.sftpClient(p.ConnectionID)
+	client, prompt, err := s.sftpClient(p.ConnectionID, p.Password, p.KeyPassphrase)
 	if err != nil {
 		return nil, err
+	}
+	if prompt != nil {
+		return prompt, nil
 	}
 	defer client.Close()
 
@@ -160,19 +185,33 @@ func (s *Server) handleSftpMkdir(c *wsClient, params json.RawMessage) (interface
 }
 
 // sftpClient returns a fresh SFTP client over the pooled connection.
-func (s *Server) sftpClient(connID string) (*sftp.Client, error) {
+//
+// When the connection has no usable credentials the dial fails; instead of
+// surfacing a dead-end authentication error the caller receives a non-nil
+// prompt map ({needPassword} or {needPassphrase}) that the UI turns into a
+// prompt, retrying the call with the typed credential.
+func (s *Server) sftpClient(connID, password, keyPassphrase string) (*sftp.Client, map[string]interface{}, error) {
 	conn, err := s.findConnection(connID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var client *ssh.Client
-	client, err = s.pool.Get(conn, nil)
+	if keyPassphrase != "" && conn.KeyID != "" {
+		s.pool.ProvidePassphrase(conn.KeyID, keyPassphrase)
+	}
+	var passPtr *string
+	if password != "" {
+		passPtr = &password
+	}
+	client, err := s.pool.Get(conn, passPtr)
 	if err != nil {
-		return nil, err
+		if prompt, ok := s.credentialPrompt(err); ok {
+			return nil, prompt, nil
+		}
+		return nil, nil, err
 	}
 	sc, err := sftp.NewClient(client)
 	if err != nil {
-		return nil, fmt.Errorf("SFTP 连接失败：%w", err)
+		return nil, nil, fmt.Errorf("SFTP 连接失败：%w", err)
 	}
-	return sc, nil
+	return sc, nil, nil
 }

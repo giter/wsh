@@ -9,6 +9,10 @@ type Connection struct {
 	User string `json:"user"`
 	// FolderID groups this connection under a folder; empty means ungrouped.
 	FolderID string `json:"folder_id,omitempty"`
+	// Order is the position of this connection inside its folder (or the
+	// ungrouped group). It is written by drag-and-drop reordering and sorted on
+	// read, so the tree keeps the user's arrangement across restarts.
+	Order int `json:"order,omitempty"`
 	// EncryptedPassword is the AES-GCM ciphertext (base64) of the password,
 	// or empty when only key-based auth is used.
 	EncryptedPassword string `json:"encrypted_password,omitempty"`
@@ -55,6 +59,10 @@ type SSHKey struct {
 type Folder struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Order is the position of this folder in the session tree. Folders are
+	// sorted by it so drag-and-drop reordering survives a restart; entries that
+	// share an order (or predate the field) keep their stored order.
+	Order int `json:"order,omitempty"`
 }
 
 // Settings holds global application options persisted in settings.json.

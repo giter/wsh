@@ -5,15 +5,49 @@ import { rpc } from "../lib/rpc.js";
 import { useApp } from "../state/store.jsx";
 import { base64Encode, base64Decode, triggerDownload } from "../lib/format.js";
 
-const TERM_OPTS = {
-    fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
-    fontSize: 13,
-    theme: {
+// xterm palettes per app theme. The terminal keeps its own (dark by default)
+// colours in dark mode; in light mode it follows the rest of the UI instead of
+// staying a dark block in the middle of a light window.
+const TERM_THEMES = {
+    dark: {
         background: "#111118",
         foreground: "#e7e7f0",
         cursor: "#34d399",
         selectionBackground: "rgba(52,211,153,.25)",
     },
+    light: {
+        background: "#ffffff",
+        foreground: "#1e1e26",
+        cursor: "#0ea56e",
+        selectionBackground: "rgba(14,165,110,.22)",
+        black: "#1e1e26",
+        brightBlack: "#5c5c6b",
+        red: "#e11d48",
+        brightRed: "#be123c",
+        green: "#0ea56e",
+        brightGreen: "#047857",
+        yellow: "#b45309",
+        brightYellow: "#d97706",
+        blue: "#2563eb",
+        brightBlue: "#1d4ed8",
+        magenta: "#9333ea",
+        brightMagenta: "#7e22ce",
+        cyan: "#0e7490",
+        brightCyan: "#155e75",
+        white: "#e4e4ec",
+        brightWhite: "#ffffff",
+    },
+};
+
+// termThemeFor maps the app theme name to an xterm palette.
+export function termThemeFor(theme) {
+    return theme === "light" ? TERM_THEMES.light : TERM_THEMES.dark;
+}
+
+const TERM_OPTS = {
+    fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
+    fontSize: 13,
+    theme: TERM_THEMES.dark,
     scrollback: 5000,
 };
 
@@ -154,6 +188,15 @@ export default function TerminalTab({ tab, active }) {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab.id]);
+
+    // Follow the app theme: an existing terminal re-colours live when the user
+    // switches theme in the options window.
+    const themeName = app.settings.theme === "light" ? "light" : "dark";
+    useEffect(() => {
+        const term = termRef.current;
+        if (!term) return;
+        term.options.theme = termThemeFor(themeName);
+    }, [themeName, phase]);
 
     // Fit and focus when this tab becomes visible. Hidden tabs have no size, so
     // fitting must not run while inactive.

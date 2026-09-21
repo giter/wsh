@@ -6,12 +6,13 @@ import (
 )
 
 // AppActions are desktop-shell callbacks the web UI can invoke over RPC to drive
-// native behaviour (opening configuration windows, quitting, DevTools, window
-// controls). They are unset in headless mode, where those actions are
-// unavailable.
+// native behaviour (opening windows, quitting, DevTools, window controls). They
+// are unset in headless mode, where those actions are unavailable.
 type AppActions struct {
 	OpenSettings func()
 	OpenKeys     func()
+	OpenSftp     func()
+	OpenTunnels  func()
 	Quit         func()
 	OpenDevTools func()
 	// WindowControl performs an action on the named window and returns an
@@ -46,6 +47,10 @@ func (s *Server) handleAppAction(c *wsClient, params json.RawMessage) (interface
 		return nil, run(s.actions.OpenSettings)
 	case "keys":
 		return nil, run(s.actions.OpenKeys)
+	case "sftp":
+		return nil, run(s.actions.OpenSftp)
+	case "tunnels":
+		return nil, run(s.actions.OpenTunnels)
 	case "quit":
 		return nil, run(s.actions.Quit)
 	case "devtools":
@@ -53,6 +58,27 @@ func (s *Server) handleAppAction(c *wsClient, params json.RawMessage) (interface
 	default:
 		return nil, fmt.Errorf("未知操作：%s", p.Action)
 	}
+}
+
+// handleOpenSession opens a terminal session in the session window. The tool
+// windows (file transfer, tunnels) cannot host terminal tabs, so they ask the
+// backend to broadcast the target to every window; the session window picks it
+// up and opens the tab.
+func (s *Server) handleOpenSession(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		ConnID string `json:"connId"`
+		Host   string `json:"host"`
+		Port   int    `json:"port"`
+		User   string `json:"user"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if p.ConnID == "" && p.Host == "" {
+		return nil, fmt.Errorf("缺少连接信息")
+	}
+	s.NotifyAll(UIMsg{Type: UIOpenSession, ConnID: p.ConnID, Host: p.Host, Port: p.Port, User: p.User})
+	return nil, nil
 }
 
 // handleWindowControl drives the custom title bar's window buttons on the

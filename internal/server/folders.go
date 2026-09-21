@@ -10,15 +10,16 @@ import (
 
 // folderView is the folder shape sent to the browser.
 type folderView struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Order int    `json:"order"`
 }
 
 func (s *Server) handleListFolders(c *wsClient, params json.RawMessage) (interface{}, error) {
 	fs := s.store.Folders()
 	out := make([]folderView, 0, len(fs))
 	for _, f := range fs {
-		out = append(out, folderView{ID: f.ID, Name: f.Name})
+		out = append(out, folderView{ID: f.ID, Name: f.Name, Order: f.Order})
 	}
 	return out, nil
 }
@@ -43,7 +44,18 @@ func (s *Server) handleSaveFolder(c *wsClient, params json.RawMessage) (interfac
 		if err := s.store.AddFolder(f); err != nil {
 			return nil, err
 		}
-		return folderView{ID: f.ID, Name: f.Name}, nil
+		// New folders go last, after any the user has already arranged.
+		ids := make([]string, 0, len(s.store.Folders()))
+		for _, existing := range s.store.Folders() {
+			if existing.ID != f.ID {
+				ids = append(ids, existing.ID)
+			}
+		}
+		ids = append(ids, f.ID)
+		if err := s.store.ReorderFolders(ids); err != nil {
+			return nil, err
+		}
+		return folderView{ID: f.ID, Name: f.Name, Order: f.Order}, nil
 	}
 	for _, f := range s.store.Folders() {
 		if f.ID == p.ID {
@@ -51,7 +63,7 @@ func (s *Server) handleSaveFolder(c *wsClient, params json.RawMessage) (interfac
 			if err := s.store.UpdateFolder(f); err != nil {
 				return nil, err
 			}
-			return folderView{ID: f.ID, Name: f.Name}, nil
+			return folderView{ID: f.ID, Name: f.Name, Order: f.Order}, nil
 		}
 	}
 	return nil, fmt.Errorf("文件夹不存在")

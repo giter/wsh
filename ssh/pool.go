@@ -69,6 +69,10 @@ func (p *Pool) resolveKey(keyID string) (string, string, error) {
 
 // Get returns a live client for the profile, dialing on first use. A non-nil
 // password wins over stored/saved ones; pass nil to use saved credentials.
+//
+// A password that was explicitly provided and worked is remembered for the rest
+// of the run, so the other features on the same connection (file transfer,
+// tunnels) do not have to ask for it again.
 func (p *Pool) Get(c *storage.Connection, password *string) (*ssh.Client, error) {
 	p.mu.Lock()
 	if client, ok := p.clients[c.ID]; ok {
@@ -104,6 +108,9 @@ func (p *Pool) Get(c *storage.Connection, password *string) (*ssh.Client, error)
 		}
 		p.mu.Lock()
 		p.clients[c.ID] = client
+		if password != nil && pw != "" {
+			p.pass[c.ID] = pw
+		}
 		p.mu.Unlock()
 	})
 	return client, err

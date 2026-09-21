@@ -147,6 +147,10 @@ func (s *Server) handleDeleteTunnel(c *wsClient, params json.RawMessage) (interf
 func (s *Server) handleStartTunnel(c *wsClient, params json.RawMessage) (interface{}, error) {
 	var p struct {
 		ID string `json:"id"`
+		// Credentials typed at a connect prompt, used when the connection has no
+		// usable saved password.
+		Password      string `json:"password,omitempty"`
+		KeyPassphrase string `json:"keyPassphrase,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -157,7 +161,17 @@ func (s *Server) handleStartTunnel(c *wsClient, params json.RawMessage) (interfa
 			if err != nil {
 				return nil, err
 			}
-			if _, err := s.tunnels.Start(conn, t); err != nil {
+			if p.KeyPassphrase != "" && conn.KeyID != "" {
+				s.pool.ProvidePassphrase(conn.KeyID, p.KeyPassphrase)
+			}
+			var passPtr *string
+			if p.Password != "" {
+				passPtr = &p.Password
+			}
+			if _, err := s.tunnels.StartWithPassword(conn, t, passPtr); err != nil {
+				if prompt, ok := s.credentialPrompt(err); ok {
+					return prompt, nil
+				}
 				return nil, err
 			}
 			return s.tunnelView(t), nil

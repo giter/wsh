@@ -190,6 +190,26 @@ func (s *Server) dispatch(c *wsClient, req wsRequest) {
 		return
 	}
 	c.respond(req.ID, true, data, "")
+
+	// Connections are owned by the session manager window but listed by every
+	// other window (session tree, file transfer, tunnels), so a successful
+	// mutation is broadcast to keep them in sync.
+	if mutatesConnections[req.Method] {
+		s.NotifyAll(UIMsg{Type: UIConnectionsChanged})
+	}
+}
+
+// mutatesConnections lists the RPC methods that change the saved connections or
+// their folders (including their order) and therefore invalidate the other
+// windows' views.
+var mutatesConnections = map[string]bool{
+	"connections.save":    true,
+	"connections.delete":  true,
+	"connections.move":    true,
+	"connections.reorder": true,
+	"folders.save":        true,
+	"folders.delete":      true,
+	"folders.reorder":     true,
 }
 
 // respond sends a reply to the browser.

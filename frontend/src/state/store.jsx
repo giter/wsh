@@ -1,12 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc.js";
+import { WINDOW_NAME } from "../lib/windowChrome.js";
 
-// Pages that live in a tab, keyed by the "kind" used across the UI.
-// Connection management is not a page: it lives in the sidebar session manager.
-export const PAGES = {
-    sftp: { id: "sftp-page", title: "文件传输" },
-    tunnels: { id: "tunnels-page", title: "端口隧道" },
-};
+// The app runs in several native windows that all share one backend:
+//
+//   main     — the terminal sessions, with the session manager docked on the
+//              left (quick connect bar + session tabs)
+//   sftp     — file transfer, closable
+//   tunnels  — port forwarding, closable
+//   settings — global options, closable
+//   keys     — key manager, closable
+//
+// Only the "main" window hosts terminal tabs. The tool windows ask for a session
+// to be opened through the backend (see openSession below), which the session
+// window picks up and turns into a tab.
+export const WINDOW = WINDOW_NAME || "main";
+
+// isSessionWindow reports whether this window hosts terminal tabs and the docked
+// session manager.
+export const isSessionWindow = WINDOW === "main";
 
 const AppCtx = createContext(null);
 
@@ -34,9 +46,14 @@ export function AppProvider({ children }) {
     const [tabs, setTabs] = useState([]);
     const [activeTab, setActiveTab] = useState(null);
     const [dialog, setDialog] = useState(null);
+    // The session manager is docked on the left of the session window; like
+    // XShell it can be collapsed and brought back (title bar button / Ctrl+1).
+    const [sessionManagerOpen, setSessionManagerOpen] = useState(true);
 
     const settingsRef = useRef(settings);
     settingsRef.current = settings;
+    const connectionsRef = useRef(connections);
+    connectionsRef.current = connections;
     const tabsRef = useRef(tabs);
     tabsRef.current = tabs;
     const activeTabRef = useRef(activeTab);
@@ -121,9 +138,13 @@ export function AppProvider({ children }) {
         const off2 = rpc.on("ui.keys-changed", () => {
             refreshConnections().catch(() => {});
         });
+        const off3 = rpc.on("ui.connections-changed", () => {
+            refreshConnections().catch(() => {});
+        });
         return () => {
             off1();
             off2();
+            off3();
         };
     }, [loadSettings, refreshConnections]);
 
@@ -150,18 +171,11 @@ export function AppProvider({ children }) {
         };
     }, [loadSettings, refreshConnections]);
 
-    // ---- Tabs ----
+    // ---- Tabs (session window only) ----
 
     const openTerminal = useCallback((conn) => {
         setTabs((ts) => (ts.some((t) => t.id === conn.id) ? ts : [...ts, { id: conn.id, kind: "terminal", connId: conn.id, title: conn.name }]));
         setActiveTab(conn.id);
-    }, []);
-
-    const openPage = useCallback((kind) => {
-        const page = PAGES[kind];
-        if (!page) return;
-        setTabs((ts) => (ts.some((t) => t.id === page.id) ? ts : [...ts, { id: page.id, kind, title: page.title }]));
-        setActiveTab(page.id);
     }, []);
 
     // openQuickTerminal opens a one-off session for an unsaved address (quick
@@ -178,8 +192,59 @@ export function AppProvider({ children }) {
         setActiveTab(id);
     }, []);
 
-    // Rename a tab's session title. For saved connections use
-    // renameConnection so the sidebar name stays in sync.
+    // openSession opens a terminal for a saved connection or a one-off address.
+    // In the tool windows (where the tabs don't exist) the request is delegated
+    // to the backend, which broadcasts it to the session window.
+    const openSession = useCallback(
+        (target) => {
+            if (!isSessionWindow) {
+                const params = target.connId
+                    ? { connId: target.connId }
+                    : { host: target.host, port: target.port, user: target.user };
+                rpc.call("session.open", params).catch((e) => {
+                    setDialog({ type: "notice", title: "打开会话失败", message: e.message });
+                });
+                return;
+            }
+            if (target.connId) {
+                const conn = connections.find((c) => c.id === target.connId);
+                if (!conn) {
+                    setDialog({ type: "notice", title: "打开会话失败", message: "连接不存在或已被删除" });
+                    return;
+                }
+                openTerminal(conn);
+                return;
+            }
+            openQuickTerminal({ host: target.host, port: target.port, user: target.user });
+        },
+        [connections, openTerminal, openQuickTerminal],
+    );
+
+    // Requests from other windows (or the native menus) to open a session.
+    useEffect(() => {
+        if (!isSessionWindow) return undefined;
+        return rpc.on("ui.open-session", (m) => {
+            if (m.connId) {
+                const conn = connectionsRef.current.find((c) => c.id === m.connId);
+                if (conn) openTerminal(conn);
+                else setDialog({ type: "notice", title: "打开会话失败", message: "连接不存在或已被删除" });
+                return;
+            }
+            if (m.host) openQuickTerminal({ host: m.host, port: m.port, user: m.user });
+        });
+    }, [openTerminal, openQuickTerminal]);
+
+    // "New connection" from the native menu bar opens the connection editor
+    // and reveals the session manager it belongs to.
+    useEffect(() => {
+        if (!isSessionWindow) return undefined;
+        return rpc.on("ui.new-connection", () => {
+            setSessionManagerOpen(true);
+            setDialog({ type: "connection", conn: null });
+        });
+    }, []);
+
+    // Rename a tab's session title.
     const renameTab = useCallback((id, title) => {
         const name = String(title || "").trim();
         if (!name) return;
@@ -187,7 +252,7 @@ export function AppProvider({ children }) {
     }, []);
 
     // renameConnection persists a new display name for a saved connection and
-    // refreshes both the sidebar and the open tab so the title matches.
+    // refreshes both the session tree and the open tab so the title matches.
     const renameConnection = useCallback(
         async (conn, name) => {
             await rpc.call("connections.save", {
@@ -232,16 +297,30 @@ export function AppProvider({ children }) {
 
     const selectTab = useCallback((id) => setActiveTab(id), []);
 
+    // toggleSessionManager collapses / reveals the docked session manager.
+    const toggleSessionManager = useCallback(() => setSessionManagerOpen((v) => !v), []);
+
     // ---- Dialogs ----
 
     const openDialog = useCallback((d) => setDialog(d), []);
     const closeDialog = useCallback(() => setDialog(null), []);
 
-    // appAction asks the desktop shell for a native action (open a config
+    // appAction asks the desktop shell for a native action (open another
     // window, quit, DevTools). Surfaces a dialog when unavailable (headless).
+    // "sessions" and "new-connection" are handled here: the session manager is
+    // docked in this window, not a window of its own.
     const appAction = useCallback(
-        (action) => {
-            rpc.call("app.action", { action }).catch((e) => {
+        (action, params) => {
+            if (action === "sessions") {
+                setSessionManagerOpen(true);
+                return;
+            }
+            if (action === "new-connection") {
+                setSessionManagerOpen(true);
+                setDialog({ type: "connection", conn: null });
+                return;
+            }
+            rpc.call("app.action", { action, ...(params || {}) }).catch((e) => {
                 setDialog({ type: "notice", title: "操作不可用", message: e.message });
             });
         },
@@ -264,8 +343,10 @@ export function AppProvider({ children }) {
             tabs,
             activeTab,
             openTerminal,
-            openPage,
             openQuickTerminal,
+            openSession,
+            sessionManagerOpen,
+            toggleSessionManager,
             renameTab,
             renameConnection,
             markTabSaved,
@@ -290,8 +371,10 @@ export function AppProvider({ children }) {
             tabs,
             activeTab,
             openTerminal,
-            openPage,
             openQuickTerminal,
+            openSession,
+            sessionManagerOpen,
+            toggleSessionManager,
             renameTab,
             renameConnection,
             markTabSaved,
