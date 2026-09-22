@@ -302,7 +302,7 @@ func MaskBytes(b []byte) []byte
 `ai.ask` 的 `kind` 为 `command`（自然语言→命令）、`diagnose`（报错根因）或
 `result`（解读刚执行命令的输出，返回 `suggestions` 供卡片生成快捷追问按钮）。
 
-推送：`terminal.mode`、`terminal.error`、`terminal.output`、`terminal.streaming`、`ai.delta`、`ai.done`、`host.stats`。
+推送：`terminal.mode`、`terminal.error`、`terminal.output`、`terminal.streaming`、`terminal.waiting`、`ai.delta`、`ai.done`、`host.stats`。
 
 `terminal.streaming` 在一条被跟踪的命令持续输出超过 3 秒（`captureStreaming`）时推一次，
 告诉卡片这是一条流（`tail -f`、不带 `-c` 的 `ping`），可以「停止监听 (Ctrl+C)」；
@@ -336,3 +336,21 @@ func MaskBytes(b []byte) []byte
 8. **资源探针只采样池化连接**：quick-connect 会话自持 client（不入池），不参与采样。
 9. **WebGL 加失败回退**：`@xterm/addon-webgl` 在某些 WebView2/WebKitGTK 环境不可用，
    加载异常时保留 canvas 渲染，避免白屏。
+10. **提权命令（sudo/doas/su/runuser/pkexec）单独归入黄区**：原先 `sudo` 只作为包装器被剥掉，
+    所以 `sudo ls` 是绿区、会被自动执行。实测（`sudo systemctl restart …`）暴露了两个问题：
+    自动执行会把终端卡在 `[sudo] password for lee:` 上，而捕获到的“输出”就是这句提示，
+    模型据此得出“命令成功执行”的错误结论。现在提权包装器本身算一条 `priv.escalate` 风险
+    （最高严重度仍取所有 finding），既不会被自动下发，也会在推演面板里说清原因。
+11. **密码提示不是命令结束**：sniffer 用 `looksLikeCredentialPrompt`（`[sudo] password for …:`、
+    `user@host's password:`、`Enter passphrase for key '…':`、`请输入密码：`）识别等待输入，
+    并把捕获保持打开（`credentialWait`，90s，期间不适用 30s 硬超时），推 `terminal.waiting`
+    让卡片显示“等待输入”；用户输完密码、命令真正结束于 shell 提示符后，才按 `terminal.output`
+    交付真实输出。若超时放弃，仍标的 `waitingInput=true`，并且拼给模型的 prompt 会明确要求
+    「不要断言执行成功」——避免把提示符当成结果。
+12. **确认执行与自动执行分开报告**：`exec` 新增 `confirmed` 字段。确认路径原先沿用 `auto`，
+    导致用户亲自批准的黄区命令被显示成「已自动执行（绿区）」；现在显示「已确认执行」。
+13. **AI 失败可人工重试**：模型失败多为瞬时原因（限流、连接被断、本地 Ollama 还在加载），
+    所以每次 `ai.ask` 都把请求参数（kind/prompt/excerpt/sessionId/autoRun）存进 `aiSpecs`，
+    卡片上的「重试」用**完全相同的请求**重放，而不是让模型重新猜一遍。重试前先把目标置回
+    `streaming` 并清空上次的文本/命令，避免失败文案与新回复共存。结果分析挂在卡片嵌套字段上，
+    因此单独有「重试分析」——只重读输出，不会重跑命令。ref 随卡片清理（`clearReason`）一起回收。

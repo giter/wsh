@@ -283,6 +283,32 @@ if (field) {
     const confirmReq = lastSocket.sent.filter((r) => r.method === "safety.confirm").pop();
     report("the level is sent with the confirmation", confirmReq?.params?.scope === "always", JSON.stringify(confirmReq?.params));
 
+    // A command the user approved is not an automatic one: reporting it as
+    // "已自动执行（绿区）" misread both who decided and how risky it was (a sudo
+    // command made this visible).
+    const execRows = [...document.querySelectorAll(".rc-exec")].map((e) => e.textContent);
+    const approvedRow = execRows.find((t) => t.includes("已确认"));
+    report(
+        "an approved command reads as confirmed, never as auto-run/绿区",
+        !!approvedRow && !approvedRow.includes("自动执行") && !approvedRow.includes("绿区"),
+        execRows.join(" | "),
+    );
+
+    // A command sitting at a password prompt says so, instead of spinning.
+    const yellowTrack = yellowExecs[yellowExecs.length - 1]?.params?.trackId;
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "terminal.waiting",
+            sessionId: "sess-1",
+            trackId: yellowTrack,
+            command: "rm -rf /tmp/build",
+            waiting: true,
+        }),
+    });
+    await tick();
+    const waitRow = [...document.querySelectorAll(".rc-exec")].find((e) => e.textContent.includes("等待输入"));
+    report("a command at a password prompt is shown as waiting", !!waitRow, waitRow ? waitRow.textContent : "");
+
     // 5) The analysis attaches to the card and is rendered with its weights.
     lastSocket.onmessage({
         data: JSON.stringify({
@@ -401,6 +427,97 @@ if (field) {
     await tick();
     const cancelCall = lastSocket.sent.filter((r) => r.method === "ai.cancel").pop();
     report("Esc abandons the in-flight generation", cancelCall?.params?.requestId === cancelReq, JSON.stringify(cancelCall?.params));
+
+    // A segment that ended at a prompt for a secret is not a result: the card
+    // must not bill it as a success (this is the sudo case from the field).
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "terminal.output",
+            sessionId: "sess-1",
+            trackId: streamTrack,
+            command: "traceroute 223.5.5.5",
+            text: "traceroute to 223.5.5.5\n[sudo] password for lee: ",
+            durationMs: 900,
+            waitingInput: true,
+        }),
+    });
+    await tick();
+    const stalledRow = [...document.querySelectorAll(".rc-exec")].find((e) => e.textContent.includes("输入提示"));
+    report("a segment stuck at a prompt is not billed as success", !!stalledRow, stalledRow ? stalledRow.textContent : "");
+
+    // A failed result analysis has its own retry: re-reading the output is not the
+    // same thing as running the command again.
+    const stalledAnalysis = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask");
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "ai.done",
+            requestId: stalledAnalysis?.data?.requestId,
+            ok: false,
+            error: "AI 请求超时",
+        }),
+    });
+    await tick();
+    const analysisRetry = [...document.querySelectorAll(".rc-analysis .rc-actions button")].find((b) =>
+        b.textContent.includes("重试分析"),
+    );
+    report("a failed analysis offers its own retry", !!analysisRetry);
+    if (analysisRetry) {
+        const execsBefore = lastSocket.sent.filter((r) => r.method === "terminal.exec").length;
+        analysisRetry.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        await tick();
+        const execsAfter = lastSocket.sent.filter((r) => r.method === "terminal.exec").length;
+        report("retrying the analysis does not re-run the command", execsAfter === execsBefore, `terminal.exec × ${execsAfter}`);
+    }
+
+    // A failed completion can be retried by hand, and the retry replays exactly the
+    // same request rather than asking something else.
+    setValue(field, "检查磁盘使用率");
+    await tick();
+    field.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const attemptsBefore = lastSocket.sent.filter((r) => r.method === "ai.ask").length;
+    const failedReq = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask");
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "ai.done",
+            requestId: failedReq?.data?.requestId,
+            ok: false,
+            error: "dial tcp: connection refused",
+        }),
+    });
+    await tick();
+    const failedCard = document.querySelector(".reason-card.cot.error");
+    report("a failed completion is marked as failed", !!failedCard, failedCard ? failedCard.textContent.slice(0, 40) : "");
+    const retryBtn =
+        failedCard && [...failedCard.querySelectorAll(".rc-actions button")].find((b) => b.textContent.trim() === "重试");
+    report("a failed completion offers a manual retry", !!retryBtn);
+
+    if (retryBtn) {
+        retryBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        await tick();
+        const attempts = lastSocket.sent.filter((r) => r.method === "ai.ask");
+        report(
+            "the retry replays the same request",
+            attempts.length === attemptsBefore + 1 && attempts[attempts.length - 1].params.prompt === "检查磁盘使用率",
+            JSON.stringify(attempts[attempts.length - 1].params),
+        );
+        const retryReq = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask");
+        lastSocket.onmessage({
+            data: JSON.stringify({
+                type: "ai.done",
+                requestId: retryReq?.data?.requestId,
+                ok: true,
+                text: "[生成指令] df -h",
+                steps: [{ label: "生成指令", detail: "df -h" }],
+                command: "df -h",
+                risk: { level: "safe" },
+            }),
+        });
+        await tick();
+        report("the retried card leaves the failed state", !document.querySelector(".reason-card.cot.error"));
+    }
 }
 
 if (errors.length) {

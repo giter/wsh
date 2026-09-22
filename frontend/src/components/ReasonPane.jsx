@@ -79,6 +79,7 @@ export default function ReasonPane({ tabId }) {
                         tabId={tabId}
                         latest={i === items.length - 1}
                         focused={item.id === focusId}
+                        onRetry={(key) => app.retryAI(item.id, key)}
                     />
                 ))}
             </div>
@@ -214,9 +215,16 @@ function cardSummary(item) {
     const hit = (steps || []).find((s) => s.label === "结论" || s.label === "根因" || s.label === "要点");
     const note = hit ? hit.detail : "";
     const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
+    // A failed generation has nothing else to show; a failed analysis must not be
+    // summarised as if it had produced a reading. Both carry a 重试 in the card.
+    if (item.status === "error") return `⚠ ${item.title || "AI 请求"}失败`;
+    if (item.status === "cancelled") return `已取消 · ${cmd || item.title || "AI 请求"}`;
+    if (item.analysis?.status === "error") return `⚠ ${cmd} · 结果分析失败`;
     switch (exec.status) {
         case "running":
             return `⏳ ${cmd} · 执行中…`;
+        case "waiting":
+            return `🟡 ${cmd} · 等待输入`;
         case "streaming":
             return `🟡 ${cmd} · 持续监听中`;
         case "timeout":
@@ -228,13 +236,15 @@ function cardSummary(item) {
         case "error":
             return `⚠ ${cmd} · 执行失败`;
         case "done":
+            // A segment that ended at a password prompt is not a green result.
+            if (exec.waitingInput) return `🟡 ${cmd} · 停在输入提示，未确认结果`;
             return `🟢 ${cmd} · ${secs}s${note ? " — " + note : ""}`;
         default:
             return `🤖 ${cmd || item.title || "AI 推理"}${note ? " — " + note : ""}`;
     }
 }
 
-function ReasonCard({ item, tabId, latest, focused }) {
+function ReasonCard({ item, tabId, latest, focused, onRetry }) {
     const app = useApp();
     // A card folds to a single summary line once the conversation moves on, so a
     // ten-step investigation stays scannable. Three cards stay open: the newest,
@@ -342,7 +352,17 @@ function ReasonCard({ item, tabId, latest, focused }) {
                         </details>
                     )}
 
-                    {item.command && <GeneratedCommand item={item} tabId={tabId} fill={fill} />}
+                    {/* A completion that failed or was abandoned leaves the card
+                        with nothing; retrying it is the whole recovery path. */}
+                    {(item.status === "error" || item.status === "cancelled") && onRetry && (
+                        <div className="rc-actions">
+                            <button className="btn small" onClick={() => onRetry(null)}>
+                                重试
+                            </button>
+                        </div>
+                    )}
+
+                    {item.command && <GeneratedCommand item={item} tabId={tabId} fill={fill} onRetry={onRetry} />}
                 </>
             )}
         </div>
@@ -353,7 +373,7 @@ function ReasonCard({ item, tabId, latest, focused }) {
 // proposed, the two ways to run it, and — once it has run — the interpretation of
 // its output, attached to this same card. That attachment is what turns "the
 // model wrote a command" into "the model finished a diagnosis".
-function GeneratedCommand({ item, tabId, fill }) {
+function GeneratedCommand({ item, tabId, fill, onRetry }) {
     const app = useApp();
     const [note, setNote] = useState("");
     const [revealNote, setRevealNote] = useState("");
@@ -425,14 +445,16 @@ function GeneratedCommand({ item, tabId, fill }) {
             </div>
             {revealNote && <div className="rc-note err">{revealNote}</div>}
             {note && <div className="rc-note err">{note}</div>}
-            {analysis && <ResultAnalysis analysis={analysis} tabId={tabId} />}
+            {analysis && <ResultAnalysis analysis={analysis} tabId={tabId} onRetry={onRetry} />}
         </div>
     );
 }
 
 // ExecStatus reports what happened to the command the card proposed. onStop lets
 // the user end a command that will not end on its own, which is the whole point
-// of recognising a stream: a bare spinner gives no way out.
+// of recognising a stream: a bare spinner gives no way out. confirmed marks a run
+// the user approved in the dry-run panel, which is a different event from an
+// automatic one and is reported differently.
 function ExecStatus({ exec, onStop }) {
     const status = exec?.status;
     if (!status || status === "idle") return null;
@@ -449,7 +471,21 @@ function ExecStatus({ exec, onStop }) {
         case "running":
             return (
                 <div className="rc-exec running">
-                    <span className="spinner small" /> {auto ? "绿区命令已自动执行，等待输出…" : "已下发，等待输出…"}
+                    <span className="spinner small" />
+                    {exec.confirmed
+                        ? "已确认，等待输出…"
+                        : auto
+                          ? "绿区命令已自动执行，等待输出…"
+                          : "已下发，等待输出…"}
+                    {stop}
+                </div>
+            );
+        case "waiting":
+            // Not running and not finished: the command is at a prompt for a
+            // secret. Saying so beats a spinner that looks stuck.
+            return (
+                <div className="rc-exec caution">
+                    🟡 等待输入（可能需要密码）· 在终端输入后继续
                     {stop}
                 </div>
             );
@@ -478,9 +514,19 @@ function ExecStatus({ exec, onStop }) {
                     </div>
                 );
             }
+            if (exec.waitingInput) {
+                // The segment ended at a prompt for a secret: the command did not
+                // finish, so it is not a result and must not be shown as one.
+                return (
+                    <div className="rc-exec caution">
+                        🟡 命令停在输入提示（如密码），未能确认执行结果
+                        {stop}
+                    </div>
+                );
+            }
             return (
                 <div className="rc-exec done">
-                    {auto ? "⚡ 已自动执行（绿区" : "🟢 已执行（"}
+                    {exec.confirmed ? "🟢 已确认执行（" : auto ? "⚡ 已自动执行（绿区" : "🟢 已执行（"}
                     {secs}s）{tail}
                 </div>
             );
@@ -491,7 +537,7 @@ function ExecStatus({ exec, onStop }) {
 // ResultAnalysis renders the model's reading of the output, plus one button per
 // proposed next step. Clicking a suggestion runs it as a new card, so every step
 // of the investigation keeps its own output and analysis.
-function ResultAnalysis({ analysis, tabId }) {
+function ResultAnalysis({ analysis, tabId, onRetry }) {
     const app = useApp();
     const steps = analysis.steps || [];
     const suggestions = analysis.suggestions || [];
@@ -515,6 +561,15 @@ function ResultAnalysis({ analysis, tabId }) {
                 <StepList steps={steps} />
             ) : (
                 <pre className="rc-stream">{analysis.text || (streaming ? "分析中…" : "")}</pre>
+            )}
+            {/* The analysis is its own request, so it gets its own retry: re-running
+                the command would be a different thing entirely. */}
+            {analysis.status === "error" && onRetry && (
+                <div className="rc-actions">
+                    <button className="btn small" onClick={() => onRetry("analysis")}>
+                        重试分析
+                    </button>
+                </div>
             )}
             {suggestions.length > 0 && (
                 <div className="rc-followups">

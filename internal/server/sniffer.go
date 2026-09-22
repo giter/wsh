@@ -113,6 +113,11 @@ const (
 	captureTimeout = 30 * time.Second
 	// captureLimit bounds one segment, keeping a runaway log out of the model.
 	captureLimit = 32 << 10
+	// credentialWait is how long a segment stays open at a credential prompt. A
+	// command waiting for a human (sudo, ssh, gpg) is silent for as long as it
+	// takes to type, which is a human scale — not the sub-second silence the
+	// normal idle timer measures.
+	credentialWait = 90 * time.Second
 )
 
 // captureStreaming is how long a command may keep producing output before it is
@@ -138,9 +143,14 @@ type execCapture struct {
 	// streaming records that the long-running notice was already sent, so it is
 	// pushed once per command and not on every chunk.
 	streaming bool
-	timer     *time.Timer
-	hard      *time.Timer
-	stream    *time.Timer
+	// waiting records that the command is sitting at a prompt for a secret and the
+	// segment is being held open for the answer. waitedLong records that the long
+	// credential window was already granted once.
+	waiting    bool
+	waitedLong bool
+	timer      *time.Timer
+	hard       *time.Timer
+	stream     *time.Timer
 }
 
 // armCapture starts recording output for the card identified by trackID. A capture
@@ -200,6 +210,11 @@ func (s *sniffer) appendCapture(text string, push func(interface{})) {
 		return
 	}
 	c.text = append(c.text, text...)
+	// Output after a credential prompt means the human answered: hand the segment
+	// back to the normal timing so the command's real output is what gets captured.
+	if c.waiting {
+		s.resumeLocked(c, push)
+	}
 	if len(c.text) >= captureLimit {
 		c.text = c.text[:captureLimit]
 		c.trunc = true
@@ -207,9 +222,33 @@ func (s *sniffer) appendCapture(text string, push func(interface{})) {
 	}
 }
 
+// resumeLocked returns a capture held open at a credential prompt to the normal
+// timing once output starts again (the user typed the password). Callers must
+// hold s.mu.
+func (s *sniffer) resumeLocked(c *execCapture, push func(interface{})) {
+	c.waiting = false
+	c.waitedLong = false
+	if c.hard != nil {
+		c.hard.Stop()
+	}
+	c.hard = time.AfterFunc(captureTimeout, func() { s.captureOverran(c.seq, push) })
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.timer = time.AfterFunc(captureQuiet, func() { s.captureIdle(c.seq, push) })
+	push(terminalWaitingMsg{
+		Type:      "terminal.waiting",
+		SessionID: s.sessionID,
+		TrackID:   c.trackID,
+		Command:   c.command,
+		Waiting:   false,
+	})
+}
+
 // captureIdle runs when the output has been silent for a while. It only finishes
 // the segment when the tail looks like a shell prompt, giving a command that is
-// slow to print its prompt one extra grace period.
+// slow to print its prompt one extra grace period — unless the tail is a prompt
+// for a secret, which is the command waiting for a human rather than finishing.
 func (s *sniffer) captureIdle(seq int, push func(interface{})) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,6 +257,43 @@ func (s *sniffer) captureIdle(seq int, push func(interface{})) {
 	if c == nil || c.seq != seq || c.finished {
 		return
 	}
+
+	// A credential prompt is not the end of the command: it is the command waiting
+	// for a human. Hold the segment open, because whatever follows the password is
+	// the real output. Closing here is exactly how a failed `sudo` ends up
+	// described as a silent success: the only "output" is the prompt.
+	if looksLikeCredentialPrompt(string(c.text)) {
+		if !c.waiting {
+			c.waiting = true
+			// A human may take minutes, so the ordinary budget does not apply.
+			if c.hard != nil {
+				c.hard.Stop()
+			}
+			if c.stream != nil {
+				c.stream.Stop()
+			}
+			push(terminalWaitingMsg{
+				Type:      "terminal.waiting",
+				SessionID: s.sessionID,
+				TrackID:   c.trackID,
+				Command:   c.command,
+				Waiting:   true,
+			})
+		}
+		if quiet := time.Since(c.lastData); quiet < captureQuiet {
+			c.timer = time.AfterFunc(captureQuiet-quiet, func() { s.captureIdle(seq, push) })
+			return
+		}
+		if !c.waitedLong {
+			// Give the user room to type, then close with what is there.
+			c.waitedLong = true
+			c.timer = time.AfterFunc(credentialWait, func() { s.captureIdle(seq, push) })
+			return
+		}
+		s.finishCaptureLocked(push, false)
+		return
+	}
+
 	need := captureQuiet
 	if c.grace {
 		need = captureQuietGrace
@@ -288,15 +364,20 @@ func (s *sniffer) finishCaptureLocked(push func(interface{}), timedOut bool) {
 		return
 	}
 	c.finished = true
+	text := string(c.text)
 	push(terminalOutputMsg{
 		Type:       "terminal.output",
 		SessionID:  s.sessionID,
 		TrackID:    c.trackID,
 		Command:    c.command,
-		Text:       string(c.text),
+		Text:       text,
 		DurationMs: time.Since(c.start).Milliseconds(),
 		Truncated:  c.trunc,
 		TimedOut:   timedOut,
+		// WaitingInput says the segment ended at a prompt for input rather than at
+		// a finished command, so the UI and the analysis prompt do not read the
+		// prompt itself as a result.
+		WaitingInput: looksLikeCredentialPrompt(text),
 	})
 }
 
@@ -319,6 +400,32 @@ func looksLikePrompt(text string) bool {
 		return false
 	}
 	return strings.ContainsRune(promptEnds, r[len(r)-1])
+}
+
+// credentialPrompt matches the short, colon-terminated line a command prints when
+// it is asking a human for a secret: `[sudo] password for lee:`,
+// `deploy@10.0.0.5's password:`, `Enter passphrase for key '…':`, `请输入密码：`.
+// The Latin words need a word boundary in front so `spin:` is not a match; the CJK
+// forms carry no boundary of their own.
+var credentialPrompt = regexp.MustCompile(
+	`(?i)(?:^|[\s\[@'’])(?:password|passphrase|passwd|passcode|pin)(?:\s+for\s+[^\n:]{0,64})?\s*[:：]\s*$` +
+		`|(?:密码|口令)\s*[:：]\s*$`,
+)
+
+// looksLikeCredentialPrompt reports whether the output ends at a prompt for a
+// secret (sudo, ssh, gpg), i.e. the command is waiting for the user rather than
+// finished. Only the last line is inspected, and only when it is short: a prompt
+// is a short line ending in a colon, while real output that merely mentions a
+// password is not.
+func looksLikeCredentialPrompt(text string) bool {
+	line := strings.TrimRight(lastLine(text), " \t")
+	if line == "" {
+		return false
+	}
+	if len([]rune(line)) > maxPromptLen {
+		return false
+	}
+	return credentialPrompt.MatchString(line)
 }
 
 // lastLine returns the last non-empty line of s.
@@ -520,6 +627,20 @@ type terminalOutputMsg struct {
 	DurationMs int64  `json:"durationMs"`
 	Truncated  bool   `json:"truncated"`
 	TimedOut   bool   `json:"timedOut"`
+	// WaitingInput marks a segment that ended at a prompt for input (a password,
+	// a passphrase): the command did not finish, it is waiting.
+	WaitingInput bool `json:"waitingInput,omitempty"`
+}
+
+// terminalWaitingMsg reports that a tracked command is (or is no longer) sitting
+// at a prompt for a secret. It is advisory and paired with the capture staying
+// open, so the card can say "waiting for input" instead of spinning.
+type terminalWaitingMsg struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId"`
+	TrackID   string `json:"trackId"`
+	Command   string `json:"command"`
+	Waiting   bool   `json:"waiting"`
 }
 
 // terminalStreamingMsg announces that a tracked command is still producing output

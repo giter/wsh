@@ -126,6 +126,54 @@ func TestAnalyzeLevels(t *testing.T) {
 	}
 }
 
+// TestPrivilegeEscalationNeedsConfirm documents the privilege rule: a command that
+// needs elevation is never green. It almost always stops at a password prompt,
+// which an automatic (auto-run) submission can never answer — the terminal would
+// sit at the prompt while the captured "output" looked like a silent success.
+func TestPrivilegeEscalationNeedsConfirm(t *testing.T) {
+	tests := []struct{ name, cmd string }{
+		{"sudo read", "sudo ls /root"},
+		{"sudo service", "sudo systemctl restart wglink"},
+		{"sudo install", "sudo apt-get install -y nginx"},
+		{"doas", "doas pkg_add curl"},
+		{"su shell", "su - deploy"},
+		{"runuser", "runuser -u postgres -- psql -c 'select 1'"},
+		{"pkexec", "pkexec systemctl restart nginx"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Analyze(tt.cmd)
+			if got.Level != LevelCaution {
+				t.Fatalf("Analyze(%q).Level = %v, want caution; findings: %+v", tt.cmd, got.Level, got.Findings)
+			}
+			found := false
+			for _, f := range got.Findings {
+				if f.Rule == "priv.escalate" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("Analyze(%q) missing priv.escalate; findings: %+v", tt.cmd, got.Findings)
+			}
+		})
+	}
+}
+
+// TestPrivilegeEscalationDoesNotDowngrade: wrapping a destructive command in sudo
+// must still be blocked, not merely cautioned (the verdict is the most severe
+// finding, never the wrapper's own).
+func TestPrivilegeEscalationDoesNotDowngrade(t *testing.T) {
+	for _, cmd := range []string{
+		"sudo rm -rf /",
+		"su -c 'rm -rf /'",
+		"sudo dd if=/dev/zero of=/dev/sda bs=1M",
+	} {
+		if got := Analyze(cmd); got.Level != LevelBlocked {
+			t.Fatalf("Analyze(%q).Level = %v, want blocked; findings: %+v", cmd, got.Level, got.Findings)
+		}
+	}
+}
+
 // TestParseErrorIsSafe documents that incomplete input (as typed by the user)
 // is handed to the shell rather than being flagged: the parser would otherwise
 // report "blocked" on half-typed quotes.

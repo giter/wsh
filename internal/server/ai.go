@@ -175,6 +175,12 @@ func (s *Server) buildUserPrompt(kind string, p aiAskParams) string {
 	case ctx != "":
 		b.WriteString(sanitize.Mask(ctx))
 		b.WriteString("\n")
+		// A segment that ended at a credential prompt is not a finished command:
+		// say so, or the model reads the prompt itself as the result and reports a
+		// confident success for a `sudo` that never ran.
+		if kind == "result" && looksLikeCredentialPrompt(ctx) {
+			b.WriteString("注意：输出末尾是命令在等待输入（如密码提示），说明它还没有执行完；[结论] 必须说明这一点，不要断言执行成功。\n")
+		}
 	case kind == "result":
 		b.WriteString("（用户已关闭上下文共享，未附带输出）\n")
 	}

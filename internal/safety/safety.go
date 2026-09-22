@@ -227,6 +227,16 @@ func (a *analyzer) checkCall(call *syntax.CallExpr, depth int) {
 	if name == "" || name == "." || name == "/" {
 		return
 	}
+	// Privilege escalation is confirmation-worthy on its own: it changes what the
+	// command is allowed to touch, and the tool almost always stops to ask for a
+	// password — a prompt an unattended (auto-run) command can never answer. Left
+	// unflagged, `sudo systemctl restart x` would be auto-submitted and the
+	// terminal would sit at the password prompt while the captured "output" (just
+	// the prompt) looked like a silent success.
+	switch name {
+	case "sudo", "doas", "su", "runuser", "pkexec":
+		a.caution("priv.escalate", "风险操作：需要提权（"+name+"），可能要求输入密码，需二次确认", name)
+	}
 	// Peel wrappers (sudo, env, timeout, ssh, xargs, ...) to reach the command
 	// that actually runs.
 	inner, rest := resolve(name, args[1:])

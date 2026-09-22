@@ -306,6 +306,93 @@ func TestSnifferCaptureReportsStreaming(t *testing.T) {
 	}
 }
 
+// TestLooksLikeCredentialPrompt pins the shapes that count as a command asking
+// for a secret, and — just as important — the ordinary output that does not.
+func TestLooksLikeCredentialPrompt(t *testing.T) {
+	yes := []string{
+		"[sudo] password for lee: ",
+		"Password:",
+		"password:",
+		"lee@debian:~$ ssh deploy@10.0.0.5\ndeploy@10.0.0.5's password:",
+		"Enter passphrase for key '/home/lee/.ssh/id_rsa':",
+		"New password:",
+		"请输入密码：",
+	}
+	for _, s := range yes {
+		if !looksLikeCredentialPrompt(s) {
+			t.Fatalf("looksLikeCredentialPrompt(%q) = false, want true", s)
+		}
+	}
+
+	no := []string{
+		"",
+		"lee@debian:~$ ",
+		"Warning: your password will expire in 3 days",
+		"Authentication failed: invalid password",
+		"total 4\ndrwxr-xr-x 2 lee lee 4096 password/",
+		"--spin: 3 threads started",
+		// A real output line is not a short prompt, even if it ends in a colon.
+		strings.Repeat("x", 200) + " password:",
+	}
+	for _, s := range no {
+		if looksLikeCredentialPrompt(s) {
+			t.Fatalf("looksLikeCredentialPrompt(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestSnifferHoldsCaptureAtCredentialPrompt covers `sudo`: the segment must stay
+// open at the password prompt instead of being delivered — reporting that prompt
+// as the command's output is exactly what made a `sudo` that never ran look like
+// a success. Once the user answers, the real output is what gets captured.
+func TestSnifferHoldsCaptureAtCredentialPrompt(t *testing.T) {
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.armCapture("r9", "sudo systemctl restart wglink", sk.push)
+	s.feed([]byte("sudo systemctl restart wglink\r\n[sudo] password for lee: "), sk.push)
+
+	// The prompt must be announced as waiting, not delivered as a result.
+	got := sk.await(t, 1, 3*time.Second)
+	m, ok := got[0].(terminalWaitingMsg)
+	if !ok || !m.Waiting || m.TrackID != "r9" || m.SessionID != "s1" {
+		t.Fatalf("expected a waiting notice, got %+v", got[0])
+	}
+	if len(got) != 1 {
+		t.Fatalf("the segment must not be delivered while it waits: %+v", got)
+	}
+
+	// The user types the password: the command's real output arrives and the
+	// segment ends at the shell prompt.
+	s.feed([]byte("\r\nRestarting wglink...\r\nlee@debian:~$ "), sk.push)
+
+	all := sk.await(t, 3, 3*time.Second)
+	var out terminalOutputMsg
+	var found, resumed bool
+	for _, v := range all {
+		switch msg := v.(type) {
+		case terminalOutputMsg:
+			out, found = msg, true
+		case terminalWaitingMsg:
+			if !msg.Waiting {
+				resumed = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected the segment after the password, got %+v", all)
+	}
+	if !resumed {
+		t.Fatalf("expected a resume notice so the card leaves the waiting state: %+v", all)
+	}
+	if out.WaitingInput {
+		t.Fatalf("a command that ran to completion must not be flagged as waiting: %+v", out)
+	}
+	if !strings.Contains(out.Text, "Restarting wglink") {
+		t.Fatalf("the output after the password should be captured: %q", out.Text)
+	}
+}
+
 func TestSnifferCaptureFlushedByNextCommand(t *testing.T) {
 	sk := &sink{}
 	s := newSniffer("s1")

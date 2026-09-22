@@ -116,6 +116,10 @@ export function AppProvider({ children }) {
     // several requests can be in flight and a result analysis lands on the card
     // that proposed the command instead of opening a new one.
     const aiRequests = useRef(new Map());
+    // Maps a card (and its nested field) to the parameters of the request that
+    // filled it, so a failed completion can be replayed verbatim by retryAI. A
+    // ref, not state: it never affects rendering, only what 重试 does.
+    const aiSpecs = useRef(new Map());
     // Long-lived push handlers must see the freshest reasoning pane and AI status.
     const reasonRef = useRef(reason);
     reasonRef.current = reason;
@@ -457,6 +461,16 @@ export function AppProvider({ children }) {
     }, []);
 
     const clearReason = useCallback((tabId) => {
+        // Drop the replay specs of the cards going away, so a long session does not
+        // accumulate them (keys are "rN" or "rN:analysis").
+        const keep = new Set();
+        for (const r of reasonRef.current) {
+            if (tabId && r.tabId === tabId) continue;
+            keep.add(r.id);
+        }
+        for (const k of Array.from(aiSpecs.current.keys())) {
+            if (!keep.has(k.split(":")[0])) aiSpecs.current.delete(k);
+        }
         setReason((rs) => (tabId ? rs.filter((r) => r.tabId !== tabId) : []));
     }, []);
 
@@ -498,6 +512,17 @@ export function AppProvider({ children }) {
                       text: "",
                       steps: [],
                   });
+            // Remember how this was asked, so a failure can be retried with the
+            // very same request instead of a re-phrased guess at it.
+            aiSpecs.current.set(key ? `${id}:${key}` : id, {
+                tabId,
+                sessionId,
+                kind,
+                prompt,
+                excerpt,
+                title,
+                autoRun,
+            });
             return rpc.call("ai.ask", { sessionId, kind, prompt, excerpt }).then(
                 (res) => {
                     if (res && res.requestId) aiRequests.current.set(res.requestId, { id, key, tabId, autoRun: !!autoRun });
@@ -551,6 +576,33 @@ export function AppProvider({ children }) {
                 excerpt: text,
                 into: { cardId, key: "analysis" },
             });
+        },
+        [askAI, patchCard],
+    );
+
+    // retryAI replays a request that failed, using exactly the parameters it was
+    // made with — same kind, same prompt, same context. A model fails for
+    // transient reasons (rate limits, a dropped socket, a local Ollama still
+    // loading), and without this the only way out was to retype the question.
+    //
+    // The target is put back into its streaming state first, so the failure text
+    // is replaced rather than shown next to the new reply.
+    const retryAI = useCallback(
+        (cardId, key) => {
+            const spec = aiSpecs.current.get(key ? `${cardId}:${key}` : cardId);
+            if (!spec) return null;
+            const clean = { status: "streaming", text: "", steps: [], suggestions: [] };
+            if (key) {
+                patchCard(cardId, key, clean);
+            } else {
+                // A generation that failed left no usable command behind, so the
+                // stale command/risk are cleared with the error text.
+                patchCard(cardId, null, { ...clean, command: "", risk: null });
+            }
+            // The failure is recorded on the card by askAI itself, so the rejection
+            // is not worth propagating: a retry that fails again must not also
+            // produce an unhandled rejection.
+            return askAI({ ...spec, into: key ? { cardId, key } : { cardId } }).catch(() => null);
         },
         [askAI, patchCard],
     );
@@ -643,7 +695,17 @@ export function AppProvider({ children }) {
                                     command: cmd,
                                     scope: scope || "",
                                 });
-                                if (trackId) markExec(trackId, { status: "running", startedAt: Date.now(), auto: !!auto });
+                                // The user approved this run, so it is not an automatic one:
+                                // calling it 自动执行（绿区）would misreport both who decided
+                                // and how risky the command was.
+                                if (trackId) {
+                                    markExec(trackId, {
+                                        status: "running",
+                                        startedAt: Date.now(),
+                                        auto: false,
+                                        confirmed: true,
+                                    });
+                                }
                                 // Re-pin: the panel may have waited a while, and the marker must sit
                                 // on the line the command is written to now.
                                 markAnchor();
@@ -872,6 +934,9 @@ export function AppProvider({ children }) {
                 output: m.text || "",
                 durationMs: m.durationMs || 0,
                 truncated: !!m.truncated,
+                // A segment that ended at a password prompt is not a finished
+                // command, and must not be presented as one.
+                waitingInput: !!m.waitingInput,
             });
             const ai = aiStatusRef.current || {};
             if (!ai.configured) return;
@@ -902,6 +967,12 @@ export function AppProvider({ children }) {
             if (!m.trackId) return;
             markExec(m.trackId, { status: "streaming", elapsedMs: m.elapsedMs || 0 });
         });
+        // A command sitting at a password prompt says so, instead of leaving a
+        // spinner with no explanation while the user types (sudo, ssh, gpg).
+        const offWaiting = rpc.on("terminal.waiting", (m) => {
+            if (!m.trackId) return;
+            markExec(m.trackId, { status: m.waiting ? "waiting" : "running" });
+        });
         // A session that ends mid-command can never deliver that output, so stop
         // showing a spinner that will not resolve.
         const offExit = rpc.on("terminal.exit", (m) => {
@@ -921,6 +992,7 @@ export function AppProvider({ children }) {
         return () => {
             offOutput();
             offStream();
+            offWaiting();
             offExit();
         };
     }, [analyzeResult, markExec, patchCard]);
@@ -997,6 +1069,7 @@ export function AppProvider({ children }) {
             askFollowUp,
             interruptTab,
             cancelAI,
+            retryAI,
             registerTerminal,
             revealOutput,
             hoverOutput,
@@ -1055,6 +1128,7 @@ export function AppProvider({ children }) {
             askFollowUp,
             interruptTab,
             cancelAI,
+            retryAI,
             registerTerminal,
             revealOutput,
             hoverOutput,

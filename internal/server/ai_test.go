@@ -177,6 +177,31 @@ func TestBuildUserPromptResultWithContextOff(t *testing.T) {
 	}
 }
 
+// TestBuildUserPromptResultWarnsAboutCredentialPrompt: a segment that ended at a
+// password prompt is not a result. Unless the prompt says so, the model reads
+// `[sudo] password for lee:` as the command's output and reports a confident
+// success for a command that never ran.
+func TestBuildUserPromptResultWarnsAboutCredentialPrompt(t *testing.T) {
+	srv := newTestServer(nil)
+
+	got := srv.buildUserPrompt("result", aiAskParams{
+		Prompt:  "sudo systemctl restart wglink",
+		Excerpt: "sudo systemctl restart wglink\n[sudo] password for lee: ",
+	})
+	if !strings.Contains(got, "等待输入") {
+		t.Fatalf("the prompt must say the command is waiting for input: %q", got)
+	}
+
+	// A command that really finished gets no such warning.
+	normal := srv.buildUserPrompt("result", aiAskParams{
+		Prompt:  "uptime",
+		Excerpt: " 10:53 up 3 days,  1 user,  load average: 0.12",
+	})
+	if strings.Contains(normal, "等待输入") {
+		t.Fatalf("a completed command must not carry the warning: %q", normal)
+	}
+}
+
 func TestHandleAIAskRequiresProviderAndPrompt(t *testing.T) {
 	srv := newTestServer(nil)
 	if _, err := srv.handleAIAsk(nil, []byte(`{"prompt":"ls"}`)); err == nil {
