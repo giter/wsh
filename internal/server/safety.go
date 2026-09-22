@@ -28,14 +28,22 @@ func (s *Server) handleSafetyCheck(c *wsClient, params json.RawMessage) (interfa
 	return safety.Analyze(p.Command), nil
 }
 
-// handleSafetyConfirm issues a one-shot authorisation token for a command the
-// user has explicitly approved in the dry-run panel. The token is bound to the
-// session and to the exact command text, expires quickly and can be used once,
-// so a confirmation cannot be replayed for a different command later.
+// handleSafetyConfirm issues the authorisation for a command the user explicitly
+// approved in the dry-run panel. It also records how far that approval reaches:
+//
+//   - scope "": one-shot. The token is bound to the session and to the exact
+//     command text, expires in two minutes and can be used once, so a confirmation
+//     cannot be replayed later.
+//   - scope "session": remember it for this session only (in memory).
+//   - scope "always": remember it for good, in settings.json.
+//
+// Recording the wider scopes here (rather than on a bare "allow" call) keeps the
+// approval and the execution inseparable: one user gesture, one decision.
 func (s *Server) handleSafetyConfirm(c *wsClient, params json.RawMessage) (interface{}, error) {
 	var p struct {
 		SessionID string `json:"sessionId"`
 		Command   string `json:"command"`
+		Scope     string `json:"scope"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
@@ -45,8 +53,22 @@ func (s *Server) handleSafetyConfirm(c *wsClient, params json.RawMessage) (inter
 	}
 	res := safety.Analyze(p.Command)
 	if res.Blocked() {
+		// Red zone is never approvable, whatever scope the caller asks for: the
+		// allowlist must not become a way to run a disk-wiping command.
 		return nil, fmt.Errorf("%s", res.Reason)
 	}
+
+	switch p.Scope {
+	case "session":
+		s.approvals.Allow(p.SessionID, p.Command)
+		return map[string]interface{}{"token": "", "result": res, "scope": "session"}, nil
+	case "always":
+		if err := s.store.AllowCommand(p.Command); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"token": "", "result": res, "scope": "always"}, nil
+	}
+
 	if !res.NeedsConfirm() {
 		// Nothing to approve: the caller can execute it directly.
 		return map[string]interface{}{"token": "", "result": res}, nil
@@ -77,9 +99,12 @@ type execResult struct {
 	// Blocked is true when the engine refused the command outright (红区).
 	Blocked bool `json:"blocked"`
 	// Confirm is true when the command needs explicit approval (黄区) and no
-	// valid token was supplied.
+	// valid token or standing approval covered it.
 	Confirm bool          `json:"confirm"`
 	Result  safety.Result `json:"result"`
+	// AllowedBy names the standing approval that let a yellow-zone command through
+	// ("session" or "always"), so the UI can say why it did not ask.
+	AllowedBy string `json:"allowedBy,omitempty"`
 }
 
 func (s *Server) handleTerminalExec(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -101,7 +126,17 @@ func (s *Server) handleTerminalExec(c *wsClient, params json.RawMessage) (interf
 		Confirm: decision.NeedsConfirm,
 		Result:  decision.Result,
 	}
-	if decision.Blocked || decision.NeedsConfirm {
+	// A command the user already approved (this session, or for good) skips the
+	// panel. Red still wins: decideExec refuses it before we get here.
+	if decision.NeedsConfirm {
+		switch {
+		case s.approvals.Allowed(p.SessionID, p.Command):
+			out.Confirm, out.AllowedBy = false, "session"
+		case s.store.CommandAllowed(p.Command):
+			out.Confirm, out.AllowedBy = false, "always"
+		}
+	}
+	if out.Blocked || out.Confirm {
 		return out, nil
 	}
 	// Submit the line exactly as typed; the shell echoes it like any other input.
@@ -219,4 +254,77 @@ func (cs *confirmStore) gcLocked() {
 func hashCommand(cmd string) string {
 	sum := sha256.Sum256([]byte(cmd))
 	return hex.EncodeToString(sum[:])
+}
+
+// approvalStore remembers the commands the user allowed "for this session".
+//
+// It is keyed by session id, so opening a second terminal to a different host does
+// not inherit an approval given elsewhere, and it only lives in memory: restarting
+// the app forgets every session-scoped approval, which is the point of "本会话".
+// The permanent list lives in settings.json instead (see storage.Store).
+type approvalStore struct {
+	mu    sync.Mutex
+	byKey map[string]map[string]struct{}
+}
+
+func newApprovalStore() *approvalStore {
+	return &approvalStore{byKey: make(map[string]map[string]struct{})}
+}
+
+// Allow records a session-scoped approval for the exact command text.
+func (as *approvalStore) Allow(sessionID, cmd string) {
+	if sessionID == "" || cmd == "" {
+		return
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	set := as.byKey[sessionID]
+	if set == nil {
+		set = make(map[string]struct{})
+		as.byKey[sessionID] = set
+	}
+	set[cmd] = struct{}{}
+}
+
+// Allowed reports whether the session already approved this exact command.
+func (as *approvalStore) Allowed(sessionID, cmd string) bool {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	_, ok := as.byKey[sessionID][cmd]
+	return ok
+}
+
+// Forget drops everything a session approved, so closing a terminal does not
+// leave approvals behind for a future session that happens to reuse the id.
+func (as *approvalStore) Forget(sessionID string) {
+	as.mu.Lock()
+	delete(as.byKey, sessionID)
+	as.mu.Unlock()
+}
+
+// handleSafetyAllowed lists the permanent approvals, so the options window can
+// show — and revoke — what the user will never be asked about again.
+func (s *Server) handleSafetyAllowed(c *wsClient, params json.RawMessage) (interface{}, error) {
+	return map[string]interface{}{"commands": s.store.AllowedCommands()}, nil
+}
+
+// handleSafetyRevoke removes a permanent approval, or all of them.
+func (s *Server) handleSafetyRevoke(c *wsClient, params json.RawMessage) (interface{}, error) {
+	var p struct {
+		Command string `json:"command"`
+		All     bool   `json:"all"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	var err error
+	if p.All {
+		err = s.store.ForgetAllCommands()
+	} else {
+		err = s.store.ForgetCommand(p.Command)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"commands": s.store.AllowedCommands()}, nil
 }

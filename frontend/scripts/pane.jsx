@@ -54,16 +54,29 @@ window.addEventListener("error", (e) => errors.push(e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => errors.push(e.reason));
 
 const REPLIES = {
-    "settings.get": { theme: "dark" },
+    "settings.get": { theme: "dark", aiAutoRun: true },
     "connections.list": [],
     "folders.list": [],
     "keys.list": [],
     "ai.status": { configured: true },
     "probes.snapshot": {},
     "terminal.open": { sessionId: "sess-1" },
-    "terminal.exec": { written: true },
-    "ai.ask": { requestId: "req-1", kind: "command" },
+    // exec answers like the real gate: a yellow-zone command comes back needing
+    // confirmation, anything else is written.
+    "terminal.exec": (params) =>
+        String(params?.command || "").startsWith("rm ")
+            ? {
+                  confirm: true,
+                  result: { level: "caution", findings: [{ level: "caution", reason: "递归删除目录，需二次确认" }] },
+              }
+            : { written: true },
+    "ai.ask": () => ({ requestId: `req-${++askSeq}`, kind: "command" }),
+    "safety.confirm": { token: "tok-1" },
+    "safety.allowed": { commands: [] },
 };
+
+// askSeq keeps every ai.ask reply distinguishable, the way the real backend does.
+let askSeq = 0;
 
 // The fake socket is kept so the test can deliver server pushes (ai.done).
 let lastSocket = null;
@@ -76,6 +89,7 @@ class FakeWebSocket {
     constructor() {
         this.readyState = 1;
         this.sent = [];
+        this.replies = [];
         lastSocket = this;
         setTimeout(() => this.onopen?.({}), 0);
     }
@@ -88,7 +102,9 @@ class FakeWebSocket {
         }
         this.sent.push(req);
         const data = Object.prototype.hasOwnProperty.call(REPLIES, req.method) ? REPLIES[req.method] : {};
-        setTimeout(() => this.onmessage?.({ data: JSON.stringify({ id: req.id, ok: true, data }) }), 0);
+        const payload = typeof data === "function" ? data(req.params) : data;
+        this.replies.push({ method: req.method, data: payload });
+        setTimeout(() => this.onmessage?.({ data: JSON.stringify({ id: req.id, ok: true, data: payload }) }), 0);
     }
     close() {}
     addEventListener() {}
@@ -188,7 +204,8 @@ if (field) {
     report("the answer card exists", reply.includes("AI 回复"), reply.join(" / "));
     report("the input was cleared", field.value === "");
 
-    // Finish the stream with a bracketed reply: steps plus the raw thinking.
+    // A green-zone command must run on its own, without a click.
+    const before = lastSocket.sent.filter((r) => r.method === "terminal.exec").length;
     lastSocket.onmessage({
         data: JSON.stringify({
             type: "ai.done",
@@ -200,30 +217,73 @@ if (field) {
                 { label: "生成指令", detail: "uptime" },
             ],
             command: "uptime",
+            risk: { level: "safe" },
         }),
     });
     await tick();
+    const execReqs = lastSocket.sent.filter((r) => r.method === "terminal.exec");
+    report("a green command auto-executes", execReqs.length === before + 1, `terminal.exec × ${execReqs.length}`);
+    const trackId = execReqs[execReqs.length - 1]?.params?.trackId;
+    report("the automatic run is tagged with the card id", !!trackId, `trackId=${trackId}`);
+
     const steps = document.querySelectorAll(".reason-card.cot .rc-steps li");
     report("parsed steps are rendered", steps.length === 2, [...steps].map((s) => s.textContent).join(" | "));
     const rawSummary = document.querySelector(".rc-raw > summary");
     report("the raw thinking stays available", !!rawSummary, rawSummary ? rawSummary.textContent : "");
-
-    // The result analysis must be scannable: narration recedes, findings and
-    // warnings do not, and a collapsed card still advertises its warning.
-    //
-    // Drive it the way the app does: press 立即执行 on the card, then echo the
-    // trackId it used back in a terminal.output push, exactly like the backend.
-    const execBtn = [...document.querySelectorAll(".rc-generated .rc-actions button")].find((b) =>
-        b.textContent.includes("立即执行"),
+    const execStatus = document.querySelector(".rc-exec");
+    report(
+        "the card says it ran by itself",
+        !!execStatus && execStatus.textContent.includes("自动执行"),
+        execStatus ? execStatus.textContent : "",
     );
-    report("the command card offers 立即执行", !!execBtn);
-    execBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    // A yellow-zone command must not run on its own — but with auto-run on it
+    // is submitted so the confirmation panel comes to the user instead of
+    // waiting quietly in the card.
+    const beforeYellow = lastSocket.sent.filter((r) => r.method === "terminal.exec").length;
+    setValue(field, "清理构建目录");
     await tick();
+    field.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const yellowReq = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask")?.data?.requestId;
+    report("the second question starts a request", !!yellowReq, `requestId=${yellowReq}`);
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "ai.done",
+            requestId: yellowReq,
+            ok: true,
+            text: "[生成指令] rm -rf /tmp/build",
+            steps: [{ label: "生成指令", detail: "rm -rf /tmp/build" }],
+            command: "rm -rf /tmp/build",
+            risk: { level: "caution", reason: "递归删除目录" },
+        }),
+    });
+    await tick();
+    const yellowExecs = lastSocket.sent.filter((r) => r.method === "terminal.exec");
+    report("a yellow command is submitted so it can be confirmed", yellowExecs.length === beforeYellow + 1);
+    const dryRun = document.querySelector(".reason-card.dry-run");
+    report("the confirmation panel opens by itself", !!dryRun);
+    const levels = [...document.querySelectorAll(".reason-card.dry-run .rc-actions button")].map((b) =>
+        b.textContent.trim(),
+    );
+    report(
+        "the panel offers the three approval levels",
+        levels.includes("仅此一次") && levels.includes("本会话允许") && levels.includes("始终允许"),
+        levels.join(" / "),
+    );
 
-    const execReq = [...lastSocket.sent].reverse().find((r) => r.method === "terminal.exec");
-    const trackId = execReq?.params?.trackId;
-    report("the execution is tagged with the card id", !!trackId, `trackId=${trackId}`);
+    // Choosing a level records it and runs the command in one gesture.
+    const always = [...document.querySelectorAll(".reason-card.dry-run .rc-actions button")].find((b) =>
+        b.textContent.includes("始终允许"),
+    );
+    always.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick();
+    const confirmReq = lastSocket.sent.filter((r) => r.method === "safety.confirm").pop();
+    report("the level is sent with the confirmation", confirmReq?.params?.scope === "always", JSON.stringify(confirmReq?.params));
 
+    // 5) The analysis attaches to the card and is rendered with its weights.
     lastSocket.onmessage({
         data: JSON.stringify({
             type: "terminal.output",
@@ -238,10 +298,11 @@ if (field) {
 
     const asks = lastSocket.sent.filter((r) => r.method === "ai.ask");
     report("the captured output triggers a result analysis", asks.length >= 2, `ai.ask × ${asks.length}`);
+    const analysisReq = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask")?.data?.requestId;
     lastSocket.onmessage({
         data: JSON.stringify({
             type: "ai.done",
-            requestId: "req-1",
+            requestId: analysisReq,
             ok: true,
             text: "[结论] ok",
             steps: [

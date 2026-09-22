@@ -35,6 +35,11 @@ type Server struct {
 	// (see safety.go).
 	confirms *confirmStore
 
+	// approvals remembers the commands the user allowed for this session only
+	// ("本会话允许此命令"), so the yellow-zone panel does not keep asking for the
+	// same line. Purely in-memory: closing the app forgets it.
+	approvals *approvalStore
+
 	// probes samples host resources while sessions are open (see probe.go).
 	probes *probeManager
 
@@ -47,13 +52,14 @@ type Server struct {
 // NewServer builds a server over the given backing services.
 func NewServer(store *storage.Store, pool *sshclient.Pool, tm *sshclient.TunnelManager, web fs.FS) *Server {
 	s := &Server{
-		store:    store,
-		pool:     pool,
-		tunnels:  tm,
-		web:      web,
-		sessions: make(map[string]*WebSession),
-		confirms: newConfirmStore(),
-		clients:  make(map[*wsClient]struct{}),
+		store:     store,
+		pool:      pool,
+		tunnels:   tm,
+		web:       web,
+		sessions:  make(map[string]*WebSession),
+		confirms:  newConfirmStore(),
+		approvals: newApprovalStore(),
+		clients:   make(map[*wsClient]struct{}),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -247,11 +253,16 @@ func (s *Server) register(ws *WebSession) {
 	s.sessionsMu.Unlock()
 }
 
-// unregister removes a live terminal session.
+// unregister removes a live terminal session. It also drops the commands that
+// session was allowed to run without asking, so a later session does not inherit
+// them by accident.
 func (s *Server) unregister(id string) {
 	s.sessionsMu.Lock()
 	delete(s.sessions, id)
 	s.sessionsMu.Unlock()
+	if s.approvals != nil {
+		s.approvals.Forget(id)
+	}
 }
 
 // addClient tracks a connected browser client.

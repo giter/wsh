@@ -101,6 +101,22 @@ type Settings struct {
 	// limiting every request to the user's own words. It is inverted on purpose:
 	// the zero value must mean "send context".
 	AINoContext bool `json:"ai_no_context"`
+	// AINoAutoRun stops a command the model just proposed from running on its own
+	// when the local engine classifies it as green (no confirmation needed).
+	//
+	// It is inverted for the same reason as AINoContext: the zero value has to mean
+	// "auto-run", so an existing settings.json keeps working without migration. The
+	// gate itself is unaffected — red is still refused and yellow still needs the
+	// one-shot confirmation, whether the command was typed or proposed.
+	AINoAutoRun bool `json:"ai_no_auto_run"`
+	// AllowedCommands are the exact command lines the user approved for good from
+	// the yellow-zone confirmation panel ("始终允许此命令").
+	//
+	// Exact text, not a pattern: an approval has to be auditable and narrow, and a
+	// rule-level allowlist ("允许 rm -rf 这类") would quietly widen every future
+	// confirmation. Red-zone commands are refused before this list is consulted, so
+	// nothing catastrophic can be smuggled in here.
+	AllowedCommands []string `json:"allowed_commands,omitempty"`
 }
 
 // Tunnel describes a TCP port forward over SSH.

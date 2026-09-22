@@ -128,6 +128,58 @@ func (s *Store) loadSettings() error {
 // Settings returns the current global options.
 func (s *Store) Settings() Settings { return s.settings }
 
+// AllowedCommands returns the command lines the user approved permanently.
+func (s *Store) AllowedCommands() []string {
+	return append([]string(nil), s.settings.AllowedCommands...)
+}
+
+// CommandAllowed reports whether cmd was approved permanently. It matches the
+// exact line, so an approval never widens into "anything like it".
+func (s *Store) CommandAllowed(cmd string) bool {
+	for _, c := range s.settings.AllowedCommands {
+		if c == cmd {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowCommand records a permanent approval for cmd. It is idempotent.
+func (s *Store) AllowCommand(cmd string) error {
+	if cmd == "" || s.CommandAllowed(cmd) {
+		return nil
+	}
+	st := s.settings
+	st.AllowedCommands = append(st.AllowedCommands, cmd)
+	return s.UpdateSettings(st)
+}
+
+// ForgetCommand drops one permanent approval.
+func (s *Store) ForgetCommand(cmd string) error {
+	st := s.settings
+	kept := make([]string, 0, len(st.AllowedCommands))
+	for _, c := range st.AllowedCommands {
+		if c != cmd {
+			kept = append(kept, c)
+		}
+	}
+	if len(kept) == len(st.AllowedCommands) {
+		return nil
+	}
+	st.AllowedCommands = kept
+	return s.UpdateSettings(st)
+}
+
+// ForgetAllCommands clears every permanent approval.
+func (s *Store) ForgetAllCommands() error {
+	st := s.settings
+	if len(st.AllowedCommands) == 0 {
+		return nil
+	}
+	st.AllowedCommands = nil
+	return s.UpdateSettings(st)
+}
+
 // UpdateSettings persists the given global options to settings.json.
 func (s *Store) UpdateSettings(st Settings) error {
 	s.settings = st

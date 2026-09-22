@@ -46,6 +46,8 @@ var router = map[string]handler{
 	// local command safety engine (AST based, see internal/safety)
 	"safety.check":   (*Server).handleSafetyCheck,
 	"safety.confirm": (*Server).handleSafetyConfirm,
+	"safety.allowed": (*Server).handleSafetyAllowed,
+	"safety.revoke":  (*Server).handleSafetyRevoke,
 
 	// host resource probe (see probe.go)
 	"probes.snapshot": (*Server).handleProbeSnapshot,

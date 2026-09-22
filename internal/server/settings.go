@@ -26,6 +26,10 @@ type settingsView struct {
 	HasAIKey      bool   `json:"hasAiKey"`
 	AIAutoAnalyze bool   `json:"aiAutoAnalyze"`
 	AINoContext   bool   `json:"aiNoContext"`
+	// AIAutoRun runs a proposed command in green zone without a click. The stored
+	// field is inverted (see storage.Settings) but the view exposes the positive
+	// form, which is what the UI reasons about.
+	AIAutoRun bool `json:"aiAutoRun"`
 }
 
 func toSettingsView(st storage.Settings) settingsView {
@@ -43,6 +47,7 @@ func toSettingsView(st storage.Settings) settingsView {
 		HasAIKey:      st.AIKeyEncrypted != "",
 		AIAutoAnalyze: st.AIAutoAnalyze,
 		AINoContext:   st.AINoContext,
+		AIAutoRun:     !st.AINoAutoRun,
 	}
 }
 
@@ -64,6 +69,9 @@ type saveSettingsParams struct {
 	ClearAIKey    bool `json:"clearAiKey"`
 	AIAutoAnalyze bool `json:"aiAutoAnalyze"`
 	AINoContext   bool `json:"aiNoContext"`
+	// AIAutoRun is a plain bool here: the caller always sends it (like the other AI
+	// options), and it is inverted only on the way to disk.
+	AIAutoRun bool `json:"aiAutoRun"`
 }
 
 func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -110,6 +118,7 @@ func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interf
 		AIKeyEncrypted: encKey,
 		AIAutoAnalyze:  p.AIAutoAnalyze,
 		AINoContext:    p.AINoContext,
+		AINoAutoRun:    !p.AIAutoRun,
 	}
 	if err := s.store.UpdateSettings(st); err != nil {
 		return nil, err

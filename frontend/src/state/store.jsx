@@ -114,6 +114,9 @@ export function AppProvider({ children }) {
     // Maps a terminal tab to its live session id, so a reasoning card can address
     // the PTY without the id being threaded through every component.
     const sessions = useRef(new Map());
+    // Lets the long-lived push handlers reach the latest runner: they are declared
+    // before runCommand exists, and must not re-subscribe whenever it changes.
+    const runCommandRef = useRef(null);
 
     const settingsRef = useRef(settings);
     settingsRef.current = settings;
@@ -192,6 +195,27 @@ export function AppProvider({ children }) {
         }
     }, []);
 
+    // ---- Standing command approvals ("始终允许" in the dry-run panel) ----
+    //
+    // Declared here for the same reason as refreshAIStatus: the boot effect below
+    // lists it in a dependency array, which is evaluated during render.
+    const [allowedCommands, setAllowedCommands] = useState([]);
+
+    const refreshAllowedCommands = useCallback(async () => {
+        try {
+            const res = await rpc.call("safety.allowed");
+            setAllowedCommands(res?.commands || []);
+        } catch {
+            setAllowedCommands([]);
+        }
+    }, []);
+
+    // revokeAllowed drops one standing approval, or all of them.
+    const revokeAllowed = useCallback(async (command, all) => {
+        const res = await rpc.call("safety.revoke", all ? { all: true } : { command });
+        setAllowedCommands(res?.commands || []);
+    }, []);
+
     // Persist font zoom after the user stops pressing the keys.
     useEffect(() => {
         if (!ready) return undefined;
@@ -213,6 +237,7 @@ export function AppProvider({ children }) {
                 aiModel: st.aiModel || "",
                 aiAutoAnalyze: !!st.aiAutoAnalyze,
                 aiNoContext: !!st.aiNoContext,
+                aiAutoRun: st.aiAutoRun !== false,
             })
                 .then((saved) => {
                     persistedFontSize.current = parseInt(saved?.fontSize, 10) || 0;
@@ -260,13 +285,14 @@ export function AppProvider({ children }) {
                 loadSettings(),
                 refreshConnections().catch(() => {}),
                 refreshAIStatus().catch(() => {}),
+                refreshAllowedCommands().catch(() => {}),
             ]);
             if (!cancelled) setReady(true);
         })();
         return () => {
             cancelled = true;
         };
-    }, [loadSettings, refreshConnections, refreshAIStatus]);
+    }, [loadSettings, refreshConnections, refreshAIStatus, refreshAllowedCommands]);
 
     // ---- Tabs (session window only) ----
 
@@ -438,8 +464,11 @@ export function AppProvider({ children }) {
     // `into` streams into a field of an existing card instead, which is how a
     // result analysis stays attached to the command it interprets. It resolves
     // with { requestId, kind, cardId } so a caller can await the final result.
+    //
+    // autoRun asks for the proposed command to be submitted on its own when the
+    // local engine finds nothing to confirm (see the ai.done handler).
     const askAI = useCallback(
-        ({ tabId, sessionId, kind, prompt, excerpt, title, into }) => {
+        ({ tabId, sessionId, kind, prompt, excerpt, title, into, autoRun }) => {
             const key = into?.key || null;
             const id = into?.cardId
                 ? into.cardId
@@ -453,7 +482,7 @@ export function AppProvider({ children }) {
                   });
             return rpc.call("ai.ask", { sessionId, kind, prompt, excerpt }).then(
                 (res) => {
-                    if (res && res.requestId) aiRequests.current.set(res.requestId, { id, key });
+                    if (res && res.requestId) aiRequests.current.set(res.requestId, { id, key, tabId, autoRun: !!autoRun });
                     return { ...res, cardId: id };
                 },
                 (e) => {
@@ -473,7 +502,9 @@ export function AppProvider({ children }) {
         ({ tabId, sessionId, prompt, title }) => {
             pushReason({ tabId, kind: "ask", title: title || "我的提问", text: prompt });
             openReason();
-            return askAI({ tabId, sessionId, kind: "command", prompt, title: "AI 回复" });
+            // autoRun carries through to the reply: a green command the model
+            // just proposed runs without a second click.
+            return askAI({ tabId, sessionId, kind: "command", prompt, title: "AI 回复", autoRun: true });
         },
         [askAI, openReason, pushReason],
     );
@@ -523,7 +554,7 @@ export function AppProvider({ children }) {
     // the model proposed are tracked: the output of a hand-typed command does not
     // belong to any conversation.
     const runCommand = useCallback(
-        async ({ tabId, sessionId, command, trackCardId, onWritten }) => {
+        async ({ tabId, sessionId, command, trackCardId, onWritten, auto }) => {
             const cmd = String(command || "").trim();
             if (!cmd) return { status: "empty" };
             const sid = sessionId || sessions.current.get(tabId) || "";
@@ -538,7 +569,7 @@ export function AppProvider({ children }) {
                 if (onWritten) onWritten();
             };
 
-            if (trackId) markExec(trackId, { status: "running", startedAt: Date.now() });
+            if (trackId) markExec(trackId, { status: "running", startedAt: Date.now(), auto: !!auto });
             try {
                 const res = await send("");
                 if (res.blocked) {
@@ -561,17 +592,33 @@ export function AppProvider({ children }) {
                 }
                 if (res.confirm) {
                     // Yellow zone: hand it to the dry-run panel and stop here. The
-                    // command is only sent after the user approves it explicitly.
-                    if (trackId) markExec(trackId, { status: "confirm" });
+                    // command is only sent after the user approves it explicitly, and
+                    // the panel lets that approval be one-shot, session-wide or
+                    // permanent.
+                    if (trackId) markExec(trackId, { status: "confirm", auto: !!auto });
                     setPendingConfirm({
                         tabId,
                         command: cmd,
                         result: res.result,
-                        onConfirm: async () => {
+                        // auto marks a confirmation the model's own command opened,
+                        // so the panel can say who started it.
+                        auto: !!auto,
+                        onConfirm: async (scope) => {
                             try {
-                                const { token } = await rpc.call("safety.confirm", { sessionId: sid, command: cmd });
-                                if (trackId) markExec(trackId, { status: "running", startedAt: Date.now() });
-                                await send(token);
+                                // One gesture: record how far the approval reaches and
+                                // get the authorisation for this run back.
+                                const { token } = await rpc.call("safety.confirm", {
+                                    sessionId: sid,
+                                    command: cmd,
+                                    scope: scope || "",
+                                });
+                                if (trackId) markExec(trackId, { status: "running", startedAt: Date.now(), auto: !!auto });
+                                await rpc.call("terminal.exec", {
+                                    sessionId: sid,
+                                    command: cmd,
+                                    trackId,
+                                    confirmToken: token || "",
+                                });
                                 setPendingConfirm(null);
                                 written();
                             } catch (e) {
@@ -588,7 +635,7 @@ export function AppProvider({ children }) {
                     return { status: "confirm", result: res.result };
                 }
                 written();
-                return { status: "written", result: res.result };
+                return { status: "written", result: res.result, allowedBy: res.allowedBy || "" };
             } catch (e) {
                 if (trackId) markExec(trackId, { status: "error", reason: e.message || String(e) });
                 return { status: "error", message: e.message || String(e) };
@@ -596,6 +643,8 @@ export function AppProvider({ children }) {
         },
         [markExec, openReason, pushReason],
     );
+    // Keep the ref the push handlers use pointing at the latest runner.
+    runCommandRef.current = runCommand;
 
     // runSuggestion promotes a follow-up suggestion into a command card of its own
     // and runs it, so every step of an investigation keeps its own output and
@@ -695,6 +744,24 @@ export function AppProvider({ children }) {
                     return { ...r, [t.key]: { ...cur, ...patch } };
                 }),
             );
+
+            // Auto-run: a command the model just proposed is submitted on its own.
+            // The gate decides the rest, and it is the same gate a typed command
+            // goes through:
+            //
+            //   green  → written straight to the PTY;
+            //   yellow → the dry-run panel opens and waits for the user, which is
+            //            the "pause for a dangerous command" step;
+            //   red    → refused, and the card records the attempt so the user can
+            //            see the model tried something dangerous.
+            if (!t.autoRun || !m.ok || !m.command) return;
+            if (settingsRef.current?.aiAutoRun === false) return;
+            runCommandRef.current?.({
+                tabId: t.tabId,
+                command: m.command,
+                trackCardId: t.id,
+                auto: true,
+            });
         });
         return () => {
             offDelta();
@@ -832,6 +899,9 @@ export function AppProvider({ children }) {
             analyzeResult,
             latestAICommand,
             registerSession,
+            allowedCommands,
+            refreshAllowedCommands,
+            revokeAllowed,
             stats,
         }),
         [
@@ -880,6 +950,9 @@ export function AppProvider({ children }) {
             analyzeResult,
             latestAICommand,
             registerSession,
+            allowedCommands,
+            refreshAllowedCommands,
+            revokeAllowed,
             stats,
         ],
     );

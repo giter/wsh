@@ -1,6 +1,54 @@
 import { useEffect, useState } from "react";
 import { useApp, applyZoom, zoomPercentFor, DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../state/store.jsx";
 
+// AllowedCommands lists the commands the user approved for good from the dry-run
+// panel. A permanent approval the user cannot see or undo would be a trap, so the
+// list is shown with a way to revoke each entry (or all of them).
+function AllowedCommands() {
+    const app = useApp();
+    const [err, setErr] = useState("");
+
+    useEffect(() => {
+        app.refreshAllowedCommands().catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const revoke = (command, all) => {
+        setErr("");
+        app.revokeAllowed(command, all).catch((e) => setErr(e.message || String(e)));
+    };
+
+    return (
+        <div className="allowed-cmds">
+            <div className="allowed-cmds-head">
+                <span>已始终允许的命令</span>
+                {app.allowedCommands.length > 0 && (
+                    <button className="btn small danger" onClick={() => revoke("", true)}>
+                        全部清除
+                    </button>
+                )}
+            </div>
+            {app.allowedCommands.length === 0 ? (
+                <p className="muted">
+                    暂无。在右侧影子推演面板点「始终允许」的命令会出现在这里，之后不再询问。
+                </p>
+            ) : (
+                <ul className="allowed-cmds-list">
+                    {app.allowedCommands.map((c) => (
+                        <li key={c}>
+                            <code>{c}</code>
+                            <button className="btn small" onClick={() => revoke(c, false)}>
+                                移除
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {err && <p className="err">{err}</p>}
+        </div>
+    );
+}
+
 function fromSettings(st) {
     return {
         fontSize: String(st.fontSize || 13),
@@ -16,6 +64,8 @@ function fromSettings(st) {
         aiKey: "", // never sent back by the backend
         aiAutoAnalyze: !!st.aiAutoAnalyze,
         aiNoContext: !!st.aiNoContext,
+        // The backend exposes the positive form; the stored field is inverted.
+        aiAutoRun: st.aiAutoRun !== false,
     };
 }
 
@@ -54,6 +104,7 @@ export default function SettingsPage() {
                 aiKey: form.aiKey,
                 aiAutoAnalyze: form.aiAutoAnalyze,
                 aiNoContext: form.aiNoContext,
+                aiAutoRun: form.aiAutoRun,
             });
             setForm((f) => ({ ...f, aiKey: "" }));
             setStatus({ msg: "已保存", err: false });
@@ -78,6 +129,7 @@ export default function SettingsPage() {
                 clearAiKey: true,
                 aiAutoAnalyze: form.aiAutoAnalyze,
                 aiNoContext: form.aiNoContext,
+                aiAutoRun: form.aiAutoRun,
             });
             setForm((f) => ({ ...f, aiKey: "" }));
             setStatus({ msg: "已清除密钥", err: false });
@@ -203,6 +255,12 @@ export default function SettingsPage() {
 
                     <div className="check-row">
                         <label>
+                            <input type="checkbox" checked={form.aiAutoRun} onChange={setCheck("aiAutoRun")} />
+                            AI 生成命令后自动执行绿区命令
+                        </label>
+                    </div>
+                    <div className="check-row">
+                        <label>
                             <input type="checkbox" checked={form.aiAutoAnalyze} onChange={setCheck("aiAutoAnalyze")} />
                             终端报错时自动根因分析
                         </label>
@@ -217,6 +275,11 @@ export default function SettingsPage() {
                         上下文与提问都会先经过本地脱敏（IP、密码、Token 等替换为占位符）；
                         安全判定始终由本地 AST 引擎完成，不依赖模型输出。
                     </p>
+                    <p className="muted" style={{ marginTop: 6, lineHeight: 1.7 }}>
+                        自动执行只对**绿区**生效：黄区会在右侧影子推演中停下来等你确认，红区仍然直接阻断。
+                        注意绿区是「默认放行」而非「只读」，`systemctl start`、`rm /tmp/x` 这类变更命令也属于绿区。
+                    </p>
+                    <AllowedCommands />
                     {app.settings.hasAiKey && (
                         <div style={{ marginTop: 8 }}>
                             <button className="btn small danger" onClick={clearKey}>

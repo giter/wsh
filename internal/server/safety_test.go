@@ -205,6 +205,145 @@ func TestTerminalExecTracksOutput(t *testing.T) {
 	}
 }
 
+// TestApprovalScopes covers the three levels the dry-run panel offers: one-shot,
+// session, and permanent. Only the last two make later runs skip the panel, and
+// neither may ever cover a red-zone command.
+func TestApprovalScopes(t *testing.T) {
+	const cmd = "rm -rf /tmp/build"
+
+	// One-shot: the token authorises exactly one run.
+	srv := newTestServer(nil)
+	tok := srv.confirms.Issue("s1", cmd)
+	if d := decideExec("s1", cmd, tok, srv.confirms); d.NeedsConfirm {
+		t.Fatalf("a valid token should pass: %+v", d)
+	}
+	if srv.approvals.Allowed("s1", cmd) {
+		t.Fatal("a one-shot token must not become a standing approval")
+	}
+
+	// Session scope: remembered in memory, only for that session.
+	raw, _ := json.Marshal(map[string]string{"sessionId": "s1", "command": cmd, "scope": "session"})
+	if _, err := srv.handleSafetyConfirm(nil, raw); err != nil {
+		t.Fatal(err)
+	}
+	if !srv.approvals.Allowed("s1", cmd) {
+		t.Fatal("session scope should record the approval")
+	}
+	if srv.approvals.Allowed("s2", cmd) {
+		t.Fatal("a session approval must not leak into another session")
+	}
+	if srv.store.CommandAllowed(cmd) {
+		t.Fatal("session scope must not touch the permanent list")
+	}
+
+	// Permanent scope: written to settings, and visible for revocation.
+	raw, _ = json.Marshal(map[string]string{"sessionId": "s1", "command": cmd, "scope": "always"})
+	if _, err := srv.handleSafetyConfirm(nil, raw); err != nil {
+		t.Fatal(err)
+	}
+	if !srv.store.CommandAllowed(cmd) {
+		t.Fatal("always scope should persist the approval")
+	}
+	if got := srv.store.AllowedCommands(); len(got) != 1 || got[0] != cmd {
+		t.Fatalf("unexpected permanent list: %v", got)
+	}
+	if _, err := srv.handleSafetyRevoke(nil, json.RawMessage(`{"all":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if srv.store.CommandAllowed(cmd) {
+		t.Fatal("revoke all should clear the list")
+	}
+}
+
+// TestApprovalNeverCoversRedZone is the important one: the allowlist must not
+// become a way to run a catastrophic command.
+func TestApprovalNeverCoversRedZone(t *testing.T) {
+	srv := newTestServer(nil)
+	const cmd = "rm -rf /"
+
+	for _, scope := range []string{"session", "always"} {
+		raw, _ := json.Marshal(map[string]string{"sessionId": "s1", "command": cmd, "scope": scope})
+		if _, err := srv.handleSafetyConfirm(nil, raw); err == nil {
+			t.Fatalf("scope %q must not approve a red-zone command", scope)
+		}
+	}
+	if srv.store.CommandAllowed(cmd) || srv.approvals.Allowed("s1", cmd) {
+		t.Fatal("a red-zone command must never end up approved")
+	}
+
+	// Even if it somehow were on the list, the gate still refuses it.
+	if err := srv.store.AllowCommand(cmd); err != nil {
+		t.Fatal(err)
+	}
+	d := decideExec("s1", cmd, "", srv.confirms)
+	if !d.Blocked {
+		t.Fatalf("red must win over any allowance: %+v", d)
+	}
+}
+
+// TestSessionApprovalsAreForgotten keeps a closed session from handing its
+// approvals to whatever session reuses the id later.
+func TestSessionApprovalsAreForgotten(t *testing.T) {
+	srv := newTestServer(nil)
+	srv.approvals.Allow("s1", "systemctl restart nginx")
+	if !srv.approvals.Allowed("s1", "systemctl restart nginx") {
+		t.Fatal("approval should be recorded")
+	}
+	srv.unregister("s1")
+	if srv.approvals.Allowed("s1", "systemctl restart nginx") {
+		t.Fatal("closing a session must drop its approvals")
+	}
+}
+
+// TestExecuteHonoursStandingApproval checks the wiring end to end: a yellow-zone
+// command runs without a token once it has been allowed.
+func TestExecuteHonoursStandingApproval(t *testing.T) {
+	srv := newTestServer(nil)
+	ws, fr, _ := newTestWs(t, "sess-1")
+	srv.register(ws)
+	const cmd = "systemctl restart nginx"
+
+	call := func(t *testing.T) execResult {
+		t.Helper()
+		raw, _ := json.Marshal(terminalExecParams{SessionID: "sess-1", Command: cmd})
+		out, err := srv.handleTerminalExec(nil, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(execResult)
+	}
+
+	if res := call(t); !res.Confirm {
+		t.Fatalf("first run should ask for confirmation: %+v", res)
+	}
+	srv.approvals.Allow("sess-1", cmd)
+	res := call(t)
+	if res.Confirm || !res.Written || res.AllowedBy != "session" {
+		t.Fatalf("an allowed command should run and report why: %+v", res)
+	}
+	select {
+	case got := <-fr.rcvCh:
+		if string(got) != cmd+"\n" {
+			t.Fatalf("remote received %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the command")
+	}
+
+	// And the permanent scope is honoured too.
+	if res := call(t); res.Confirm {
+		t.Fatalf("unexpected confirm: %+v", res)
+	}
+	if err := srv.store.AllowCommand(cmd); err != nil {
+		t.Fatal(err)
+	}
+	srv.approvals.Forget("sess-1")
+	res = call(t)
+	if res.Confirm || res.AllowedBy != "always" {
+		t.Fatalf("the permanent list should cover it: %+v", res)
+	}
+}
+
 // TestHandleSafetyConfirm covers the token issuance endpoint.
 func TestHandleSafetyConfirm(t *testing.T) {
 	srv := newTestServer(nil)

@@ -78,14 +78,18 @@ export default function ReasonPane({ tabId }) {
 }
 
 // DryRunCard is the 影子推演 panel: it lists what the command would do and waits
-// for an explicit click before the command is sent.
+// for an explicit choice before the command is sent. The three buttons are the
+// approval *levels* — how far the user's decision reaches — rather than three ways
+// to do the same thing.
 function DryRunCard({ pending }) {
     const findings = pending.result?.findings || [];
+    const confirm = pending.onConfirm;
     return (
         <div className="reason-card dry-run">
             <div className="rc-head">
                 <span className="risk-pill level-caution">影子推演</span>
                 <span className="rc-title">该命令需要确认</span>
+                {pending.auto && <span className="rc-thinking">AI 自动发起</span>}
             </div>
             <code className="rc-cmd">{pending.command}</code>
             <ul className="rc-findings">
@@ -100,9 +104,18 @@ function DryRunCard({ pending }) {
                 <button className="btn small" onClick={pending.onCancel}>
                     取消
                 </button>
-                <button className="btn primary small" onClick={pending.onConfirm}>
-                    确认执行
+                <button className="btn small" onClick={() => confirm("")} title="只放行这一次">
+                    仅此一次
                 </button>
+                <button className="btn small" onClick={() => confirm("session")} title="本会话内不再询问这条命令">
+                    本会话允许
+                </button>
+                <button className="btn primary small" onClick={() => confirm("always")} title="永久放行这条命令，可在「选项 → AI 推理」中移除">
+                    始终允许
+                </button>
+            </div>
+            <div className="rc-allow-hint">
+                「本会话允许」和「始终允许」只对这条命令本身生效（完全相同的一行），不会放宽其他命令。
             </div>
         </div>
     );
@@ -341,17 +354,20 @@ function GeneratedCommand({ item, tabId, fill }) {
 function ExecStatus({ exec }) {
     const status = exec?.status;
     if (!status || status === "idle") return null;
+    // A command that ran on its own says so: the user must never wonder why the
+    // terminal moved without them pressing anything.
+    const auto = !!exec.auto;
     switch (status) {
         case "running":
             return (
                 <div className="rc-exec running">
-                    <span className="spinner small" /> 已下发，等待输出…
+                    <span className="spinner small" /> {auto ? "绿区命令已自动执行，等待输出…" : "已下发，等待输出…"}
                 </div>
             );
         case "blocked":
             return <div className="rc-exec blocked">⛔ 已被本地安全引擎阻断{exec.reason ? "：" + exec.reason : ""}</div>;
         case "confirm":
-            return <div className="rc-exec caution">⚠ 需要确认，见上方影子推演</div>;
+            return <div className="rc-exec caution">⚠ 黄区命令，需确认 — 见上方影子推演</div>;
         case "error":
             return <div className="rc-exec blocked">执行失败{exec.reason ? "：" + exec.reason : ""}</div>;
         default: {
@@ -366,7 +382,8 @@ function ExecStatus({ exec }) {
             }
             return (
                 <div className="rc-exec done">
-                    🟢 已执行（耗时 {secs}s）{tail}
+                    {auto ? "⚡ 已自动执行（绿区" : "🟢 已执行（"}
+                    {secs}s）{tail}
                 </div>
             );
         }
