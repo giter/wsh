@@ -530,7 +530,7 @@ func (s *Store) DeleteKey(id string) error {
 
 // KeyMaterial decrypts a managed key for use as an SSH identity. It returns the
 // PEM-encoded private key and its passphrase (empty when the key is not
-// encrypted). It satisfies sshclient.KeyResolver.
+// encrypted). It satisfies ssh.KeyResolver.
 func (s *Store) KeyMaterial(id string) (string, string, error) {
 	for _, k := range s.keys {
 		if k.ID != id {

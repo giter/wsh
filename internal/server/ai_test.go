@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"sshclient/internal/ai"
-	sshclient "sshclient/ssh"
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/internal/ai"
+	sshclient "github.com/lijiajie/wsh/ssh"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // fakeProvider replays canned deltas, so the streaming pipeline can be tested

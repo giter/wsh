@@ -1,4 +1,4 @@
-module sshclient
+module github.com/lijiajie/wsh
 
 go 1.27.1
 

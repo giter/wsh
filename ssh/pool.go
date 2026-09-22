@@ -1,4 +1,4 @@
-package sshclient
+package ssh
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // Pool caches live SSH clients keyed by connection ID so the terminal,

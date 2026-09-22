@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"sshclient/internal/ai"
-	"sshclient/internal/safety"
-	"sshclient/internal/sanitize"
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/internal/ai"
+	"github.com/lijiajie/wsh/internal/safety"
+	"github.com/lijiajie/wsh/internal/sanitize"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // The AI layer is strictly advisory. It never decides whether a command runs:

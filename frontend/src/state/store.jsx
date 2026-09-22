@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc.js";
+import { setLanguage, t } from "../lib/i18n.js";
 import { WINDOW_NAME } from "../lib/windowChrome.js";
 
 // The app runs in several native windows that all share one backend:
@@ -152,6 +153,7 @@ export function AppProvider({ children }) {
         try {
             const st = await rpc.call("settings.get");
             persistedFontSize.current = parseInt(st?.fontSize, 10) || 0;
+            setLanguage(st?.language);
             setSettings(st || {});
         } catch {
             setSettings({});
@@ -241,6 +243,7 @@ export function AppProvider({ children }) {
         if (!fs || fs === persistedFontSize.current) return undefined;
         const timer = setTimeout(() => {
             const st = settingsRef.current;
+            setLanguage(st.language);
             rpc.call("settings.save", {
                 fontSize: fs,
                 theme: st.theme || "dark",
@@ -256,6 +259,7 @@ export function AppProvider({ children }) {
                 aiAutoAnalyze: !!st.aiAutoAnalyze,
                 aiNoContext: !!st.aiNoContext,
                 aiAutoRun: st.aiAutoRun !== false,
+                language: st.language || "auto",
             })
                 .then((saved) => {
                     persistedFontSize.current = parseInt(saved?.fontSize, 10) || 0;
@@ -343,14 +347,14 @@ export function AppProvider({ children }) {
                     ? { connId: target.connId }
                     : { host: target.host, port: target.port, user: target.user };
                 rpc.call("session.open", params).catch((e) => {
-                    setDialog({ type: "notice", title: "打开会话失败", message: e.message });
+                    setDialog({ type: "notice", title: t("session.openFailed"), message: e.message });
                 });
                 return;
             }
             if (target.connId) {
                 const conn = connections.find((c) => c.id === target.connId);
                 if (!conn) {
-                    setDialog({ type: "notice", title: "打开会话失败", message: "连接不存在或已被删除" });
+                    setDialog({ type: "notice", title: t("session.openFailed"), message: t("session.connMissing") });
                     return;
                 }
                 openTerminal(conn);
@@ -368,7 +372,7 @@ export function AppProvider({ children }) {
             if (m.connId) {
                 const conn = connectionsRef.current.find((c) => c.id === m.connId);
                 if (conn) openTerminal(conn);
-                else setDialog({ type: "notice", title: "打开会话失败", message: "连接不存在或已被删除" });
+                else setDialog({ type: "notice", title: t("session.openFailed"), message: t("session.connMissing") });
                 return;
             }
             if (m.host) openQuickTerminal({ host: m.host, port: m.port, user: m.user });

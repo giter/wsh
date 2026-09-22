@@ -16,9 +16,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"sshclient/internal/server"
-	ssh "sshclient/ssh"
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/internal/server"
+	ssh "github.com/lijiajie/wsh/ssh"
+	"github.com/lijiajie/wsh/storage"
 )
 
 //go:embed all:web

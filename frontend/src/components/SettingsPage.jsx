@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp, applyZoom, zoomPercentFor, DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../state/store.jsx";
+import { LANGUAGES, useT } from "../lib/i18n.js";
 
 // AllowedCommands lists the commands the user approved for good from the dry-run
 // panel. A permanent approval the user cannot see or undo would be a trap, so the
@@ -66,11 +67,13 @@ function fromSettings(st) {
         aiNoContext: !!st.aiNoContext,
         // The backend exposes the positive form; the stored field is inverted.
         aiAutoRun: st.aiAutoRun !== false,
+        language: st.language || "auto",
     };
 }
 
 export default function SettingsPage() {
     const app = useApp();
+    const t = useT();
     const [form, setForm] = useState(() => fromSettings(app.settings));
     const [status, setStatus] = useState({ msg: "", err: false });
 
@@ -105,9 +108,10 @@ export default function SettingsPage() {
                 aiAutoAnalyze: form.aiAutoAnalyze,
                 aiNoContext: form.aiNoContext,
                 aiAutoRun: form.aiAutoRun,
+                language: form.language || "auto",
             });
             setForm((f) => ({ ...f, aiKey: "" }));
-            setStatus({ msg: "已保存", err: false });
+            setStatus({ msg: t("settings.saved"), err: false });
         } catch (e) {
             setStatus({ msg: e.message, err: true });
         }
@@ -153,17 +157,17 @@ export default function SettingsPage() {
             <header className="config-head">
                 <div className="config-head-icon">⚙</div>
                 <div className="config-head-text">
-                    <h2>选项</h2>
-                    <p>调整界面外观与新连接、隧道的默认值</p>
+                    <h2>{t("settings.title")}</h2>
+                    <p>{t("settings.desc")}</p>
                 </div>
             </header>
 
             <div className="config-body">
                 <section className="card">
-                    <h3>外观</h3>
+                    <h3>{t("settings.appearance")}</h3>
                     <div className="grid">
                         <label className="field">
-                            <span>界面缩放</span>
+                            <span>{t("settings.zoom")}</span>
                             <input
                                 type="number"
                                 min={MIN_FONT_SIZE}
@@ -171,41 +175,51 @@ export default function SettingsPage() {
                                 value={form.fontSize}
                                 onChange={set("fontSize")}
                             />
-                            <p className="field-hint">{zoomPercentFor(form.fontSize)}%（{DEFAULT_FONT_SIZE} = 100%）</p>
+                            <p className="field-hint">{t("settings.zoomHint", { percent: zoomPercentFor(form.fontSize), base: DEFAULT_FONT_SIZE })}</p>
                         </label>
                         <label className="field">
-                            <span>主题</span>
+                            <span>{t("settings.theme")}</span>
                             <select value={form.theme} onChange={set("theme")}>
-                                <option value="dark">暗色</option>
-                                <option value="light">亮色</option>
+                                <option value="dark">{t("settings.theme.dark")}</option>
+                                <option value="light">{t("settings.theme.light")}</option>
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>{t("settings.language")}</span>
+                            <select value={form.language} onChange={set("language")}>
+                                {LANGUAGES.map((l) => (
+                                    <option key={l.value} value={l.value}>
+                                        {l.value === "auto" ? t("settings.language.auto") : l.label}
+                                    </option>
+                                ))}
                             </select>
                         </label>
                     </div>
                 </section>
 
                 <section className="card">
-                    <h3>新连接默认值</h3>
+                    <h3>{t("settings.defaults")}</h3>
                     <div className="grid">
                         <label className="field">
-                            <span>默认端口</span>
+                            <span>{t("settings.defaults.port")}</span>
                             <input type="number" min="1" max="65535" value={form.defaultPort} onChange={set("defaultPort")} />
                         </label>
                         <label className="field">
-                            <span>默认用户</span>
+                            <span>{t("settings.defaults.user")}</span>
                             <input placeholder="root" value={form.defaultUser} onChange={set("defaultUser")} />
                         </label>
                     </div>
                 </section>
 
                 <section className="card">
-                    <h3>隧道默认值</h3>
+                    <h3>{t("settings.tunnel")}</h3>
                     <div className="grid">
                         <label className="field">
-                            <span>本地端口</span>
+                            <span>{t("settings.tunnel.localPort")}</span>
                             <input type="number" min="1" max="65535" value={form.tunnelLocalPort} onChange={set("tunnelLocalPort")} />
                         </label>
                         <label className="field">
-                            <span>远程端口</span>
+                            <span>{t("settings.tunnel.remotePort")}</span>
                             <input type="number" min="1" max="65535" value={form.tunnelRemotePort} onChange={set("tunnelRemotePort")} />
                         </label>
                     </div>
@@ -294,10 +308,10 @@ export default function SettingsPage() {
                 <div className={"status-msg" + (status.err ? " err" : "")}>{status.msg}</div>
                 <div className="foot-actions">
                     <button className="btn" onClick={reset}>
-                        恢复
+                        {t("common.reset")}
                     </button>
                     <button className="btn primary" onClick={save}>
-                        保存
+                        {t("common.save")}
                     </button>
                 </div>
             </footer>

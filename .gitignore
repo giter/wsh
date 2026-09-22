@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# 本地真实配置数据（含连接记录与加密凭据），严禁入库
+/config.json
+
 # Build artifacts (Web-based client)
 wsh
 /wsh.app

@@ -1,10 +1,10 @@
-package sshclient
+package ssh
 
 import (
 	"strings"
 	"testing"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // lookup builds a resolver over a fixed set of connections.

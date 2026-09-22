@@ -1,9 +1,9 @@
-package sshclient
+package ssh
 
 import (
 	"sync"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // TunnelManager owns the lifecycle of active tunnels keyed by tunnel ID.

@@ -2,11 +2,13 @@ import { useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
+import { useT } from "../lib/i18n.js";
 
 // ConnectionDialog edits a saved connection (conn) or creates a new one. draft
 // pre-fills the form for a new connection, e.g. from a quick-connect address or
 // an open ad-hoc session. onSaved receives the saved connection view.
 export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
+    const tr = useT();
     const app = useApp();
     const editing = !!conn;
     const initial = conn || draft || {};
@@ -51,7 +53,7 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
         );
 
     const test = async () => {
-        setStatus({ msg: "测试中…", err: false });
+        setStatus({ msg: tr("conn.testing"), err: false });
         try {
             const res = await rpc.call("connections.test", {
                 id: editing ? conn.id : "",
@@ -67,16 +69,16 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
             if (res && res.needPassphrase) {
                 app.openDialog({
                     type: "passphrase",
-                    message: res.message || "需要口令",
+                    message: res.message || tr("dialog.needPassphrase"),
                     onSubmit: (pass) => {
                         keyPassRef.current = pass;
                         return test();
                     },
                 });
-                setStatus({ msg: res.message || "需要口令", err: true });
+                setStatus({ msg: res.message || tr("dialog.needPassphrase"), err: true });
                 return;
             }
-            setStatus({ msg: "连接成功 ✓", err: false });
+            setStatus({ msg: tr("conn.testOk"), err: false });
         } catch (e) {
             setStatus({ msg: e.message, err: true });
         }
@@ -108,30 +110,30 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
 
     return (
         <Modal
-            title={editing ? "编辑连接" : "新建连接"}
+            title={editing ? tr("conn.editTitle") : tr("conn.newTitle")}
             onClose={onClose}
             actions={
                 <>
                     <button className="btn" onClick={onClose}>
-                        取消
+                        {tr("common.cancel")}
                     </button>
                     <button className="btn" onClick={test}>
-                        测试连接
+                        {tr("conn.test")}
                     </button>
                     <button className="btn primary" onClick={save}>
-                        保存
+                        {tr("common.save")}
                     </button>
                 </>
             }
         >
             <label className="field">
-                <span>名称</span>
+                <span>{tr("conn.name")}</span>
                 <input autoFocus value={form.name} onChange={set("name")} />
             </label>
             <label className="field">
-                <span>文件夹</span>
+                <span>{tr("conn.folder")}</span>
                 <select value={form.folderId} onChange={set("folderId")}>
-                    <option value="">未分组</option>
+                    <option value="">{tr("conn.ungrouped")}</option>
                     {app.folders.map((f) => (
                         <option key={f.id} value={f.id}>
                             {f.name}
@@ -140,29 +142,29 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
                 </select>
             </label>
             <label className="field">
-                <span>主机</span>
+                <span>{tr("conn.host")}</span>
                 <input placeholder="example.com" value={form.host} onChange={set("host")} />
             </label>
             <label className="field">
-                <span>端口</span>
+                <span>{tr("conn.port")}</span>
                 <input type="number" value={form.port} onChange={set("port")} />
             </label>
             <label className="field">
-                <span>用户</span>
+                <span>{tr("conn.user")}</span>
                 <input placeholder="root" value={form.user} onChange={set("user")} />
             </label>
             <label className="field">
-                <span>密码</span>
+                <span>{tr("conn.password")}</span>
                 <input type="password" autoComplete="off" value={form.password} onChange={set("password")} />
             </label>
             <label className="check-row">
                 <input type="checkbox" checked={form.savePassword} onChange={set("savePassword")} />
-                保存密码（加密落盘）
+                {tr("conn.savePassword")}
             </label>
             <label className="field">
-                <span>密钥（优先使用）</span>
+                <span>{tr("conn.key")}</span>
                 <select value={form.keyId} onChange={set("keyId")}>
-                    <option value="">不使用托管密钥</option>
+                    <option value="">{tr("conn.noManagedKey")}</option>
                     {app.keys.map((k) => (
                         <option key={k.id} value={k.id}>
                             {k.name}
@@ -171,8 +173,8 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
                 </select>
             </label>
             <label className="field">
-                <span>私钥文件路径</span>
-                <input placeholder="可选：/path/to/id_rsa" value={form.privateKeyPath} onChange={set("privateKeyPath")} />
+                <span>{tr("conn.keyPath")}</span>
+                <input placeholder={tr("conn.keyPathPlaceholder")} value={form.privateKeyPath} onChange={set("privateKeyPath")} />
             </label>
 
             <div className="field">

@@ -2,8 +2,10 @@ import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
+import { useT } from "../lib/i18n.js";
 
 export default function TunnelDialog({ tunnel, onSaved, onClose }) {
+    const tr = useT();
     const app = useApp();
     const editing = !!tunnel;
     const [form, setForm] = useState(() => ({
@@ -22,8 +24,8 @@ export default function TunnelDialog({ tunnel, onSaved, onClose }) {
 
     const remote = form.direction === "remote";
     const labels = remote
-        ? { localAddr: "本地目标地址", localPort: "本地目标端口", remoteAddr: "远程监听地址", remotePort: "远程监听端口" }
-        : { localAddr: "本地监听地址", localPort: "本地监听端口", remoteAddr: "远程目标地址", remotePort: "远程目标端口" };
+        ? { localAddr: tr("tunnels.localTargetAddr"), localPort: tr("tunnels.localTargetPort"), remoteAddr: tr("tunnels.remoteListenAddr"), remotePort: tr("tunnels.remoteListenPort") }
+        : { localAddr: tr("tunnels.localListenAddr"), localPort: tr("tunnels.localListenPort"), remoteAddr: tr("tunnels.remoteTargetAddr"), remotePort: tr("tunnels.remoteTargetPort") };
 
     const save = async () => {
         setStatus({ msg: "", err: false });
@@ -48,25 +50,25 @@ export default function TunnelDialog({ tunnel, onSaved, onClose }) {
 
     return (
         <Modal
-            title={editing ? "编辑隧道" : "新建隧道"}
+            title={editing ? tr("tunnels.editTitle") : tr("tunnels.newTitle")}
             onClose={onClose}
             actions={
                 <>
                     <button className="btn" onClick={onClose}>
-                        取消
+                        {tr("common.cancel")}
                     </button>
                     <button className="btn primary" onClick={save}>
-                        保存
+                        {tr("common.save")}
                     </button>
                 </>
             }
         >
             <label className="field">
-                <span>名称</span>
+                <span>{tr("tunnels.name")}</span>
                 <input autoFocus value={form.name} onChange={set("name")} />
             </label>
             <label className="field">
-                <span>连接</span>
+                <span>{tr("tunnels.connection")}</span>
                 <select value={form.connectionId} onChange={set("connectionId")}>
                     {app.connections.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -76,10 +78,10 @@ export default function TunnelDialog({ tunnel, onSaved, onClose }) {
                 </select>
             </label>
             <label className="field">
-                <span>方向</span>
+                <span>{tr("tunnels.direction")}</span>
                 <select value={form.direction} onChange={set("direction")}>
-                    <option value="local">本地转发（本地监听 → 远程）</option>
-                    <option value="remote">远程转发（远程监听 → 本地）</option>
+                    <option value="local">{tr("tunnels.dirLocalOpt")}</option>
+                    <option value="remote">{tr("tunnels.dirRemoteOpt")}</option>
                 </select>
             </label>
             <label className="field">
@@ -99,8 +101,8 @@ export default function TunnelDialog({ tunnel, onSaved, onClose }) {
                 <input type="number" value={form.remotePort} onChange={set("remotePort")} />
             </label>
             <label className="field">
-                <span>备注</span>
-                <input placeholder="备注（可选）" value={form.remark} onChange={set("remark")} />
+                <span>{tr("tunnels.remark")}</span>
+                <input placeholder={tr("tunnels.remarkPlaceholder")} value={form.remark} onChange={set("remark")} />
             </label>
             <div className={"status-msg" + (status.err ? " err" : "")}>{status.msg}</div>
         </Modal>

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
+import { useT, t } from "../lib/i18n.js";
 
 export default function TunnelsPage() {
+    const tr = useT();
     const app = useApp();
     const [tunnels, setTunnels] = useState([]);
 
@@ -46,9 +48,9 @@ export default function TunnelsPage() {
                 };
                 app.openDialog({
                     type: res.needPassphrase ? "passphrase" : "password",
-                    message: res.message || (res.needPassphrase ? "需要口令" : "需要密码"),
+                    message: res.message || (res.needPassphrase ? t("dialog.needPassphrase") : t("dialog.needPassword")),
                     onSubmit,
-                    onCancel: () => reject(new Error("已取消")),
+                    onCancel: () => reject(new Error(t("common.cancelled"))),
                 });
             });
         });
@@ -60,20 +62,20 @@ export default function TunnelsPage() {
             else await startTunnel(t);
             refresh();
         } catch (e) {
-            app.openDialog({ type: "notice", title: "隧道操作失败", message: e.message });
+            app.openDialog({ type: "notice", title: tr("tunnels.opFailed"), message: e.message });
         }
     };
 
     const remove = (t) =>
         app.openDialog({
             type: "confirm",
-            title: "删除隧道",
+            title: tr("tunnels.deleteTitle"),
             body: (
                 <p>
-                    删除隧道 <b>{t.name}</b>？
+                    {tr("tunnels.deleteConfirm", { name: t.name })}
                 </p>
             ),
-            confirmLabel: "删除",
+            confirmLabel: tr("tunnels.delete"),
             onConfirm: async () => {
                 await rpc.call("tunnels.delete", { id: t.id });
                 refresh();
@@ -82,15 +84,15 @@ export default function TunnelsPage() {
 
     return (
         <div className="page" style={{ overflow: "auto" }}>
-            <h2>端口隧道</h2>
+            <h2>{tr("tunnels.title")}</h2>
             <div className="toolbar">
                 <button className="btn primary" onClick={() => app.openDialog({ type: "tunnel", tunnel: null, onSaved: refresh })}>
-                    ＋ 新建隧道
+                    {tr("tunnels.new")}
                 </button>
             </div>
             <div className="list">
                 {tunnels.length === 0 ? (
-                    <div className="empty">还没有隧道。点击「新建隧道」创建端口转发规则。</div>
+                    <div className="empty">{tr("tunnels.empty")}</div>
                 ) : (
                     tunnels.map((t) => (
                         <TunnelRow
@@ -108,7 +110,8 @@ export default function TunnelsPage() {
 }
 
 function TunnelRow({ tunnel: t, onToggle, onEdit, onDelete }) {
-    const dirLabel = t.direction === "remote" ? "远程转发" : "本地转发";
+    const tr = useT();
+    const dirLabel = t.direction === "remote" ? tr("tunnels.remoteFwd") : tr("tunnels.localFwd");
     const flow =
         t.direction === "remote"
             ? `${t.remoteAddress}:${t.remotePort} → ${t.localAddress}:${t.localPort}`
@@ -120,19 +123,19 @@ function TunnelRow({ tunnel: t, onToggle, onEdit, onDelete }) {
             <div className="row-main">
                 <div className="row-title">{flow}</div>
                 <div className="row-sub">
-                    {t.name} · {dirLabel} · 通过 {t.connectionName}
+                    {t.name} · {dirLabel} · {tr("tunnels.via", { conn: t.connectionName })}
                 </div>
                 {t.remark && <div className="row-sub remark">{t.remark}</div>}
             </div>
-            <span className={"badge " + (t.running ? "on" : "off")}>{t.running ? "转发中" : "已停止"}</span>
+            <span className={"badge " + (t.running ? "on" : "off")}>{t.running ? tr("tunnels.active") : tr("tunnels.stopped")}</span>
             <div className="row-actions">
                 <button className="btn small" onClick={onToggle}>
-                    {t.running ? "停止" : "启动"}
+                    {t.running ? tr("tunnels.stop") : tr("tunnels.start")}
                 </button>
-                <button className="icon-btn" title="编辑" onClick={onEdit}>
+                <button className="icon-btn" title={tr("tunnels.edit")} onClick={onEdit}>
                     ✎
                 </button>
-                <button className="icon-btn danger" title="删除" onClick={onDelete}>
+                <button className="icon-btn danger" title={tr("tunnels.delete")} onClick={onDelete}>
                     🗑
                 </button>
             </div>

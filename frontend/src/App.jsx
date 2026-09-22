@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { useApp, WINDOW } from "./state/store.jsx";
+import { setLanguage, useT } from "./lib/i18n.js";
 import TitleBar from "./components/TitleBar.jsx";
 import QuickConnectBar from "./components/QuickConnectBar.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -17,10 +18,10 @@ import ReasonPane from "./components/ReasonPane.jsx";
 // own native window, so they can be closed and reopened (or moved to another
 // screen) independently of the terminal sessions.
 const WINDOW_ROUTES = {
-    sftp: { title: "文件传输", page: "sftp" },
-    tunnels: { title: "端口隧道", page: "tunnels" },
-    settings: { title: "选项", page: "settings" },
-    keys: { title: "密钥管理", page: "keys" },
+    sftp: { titleKey: "app.win.sftp", page: "sftp" },
+    tunnels: { titleKey: "app.win.tunnels", page: "tunnels" },
+    settings: { titleKey: "app.win.settings", page: "settings" },
+    keys: { titleKey: "app.win.keys", page: "keys" },
 };
 
 // windowRoute returns the dedicated-window configuration for this window, or
@@ -69,6 +70,7 @@ function ReasonPaneHost() {
 // their own so they never crowd the sessions.
 function SessionWindow() {
     const app = useApp();
+    const t = useT();
 
     // Keyboard accelerators for the menu. Matching uses e.code so it is layout
     // independent; bare-letter shortcuts are suppressed while typing so the
@@ -144,7 +146,7 @@ function SessionWindow() {
                 {app.tabs.length === 0 ? (
                     <div className="center-box">
                         <div style={{ fontSize: 28 }}>🖥️</div>
-                        <div>{app.sessionManagerOpen ? "双击「会话管理器」中的连接开始" : "按 Ctrl+1 展开会话管理器"}</div>
+                        <div>{app.sessionManagerOpen ? t("app.empty.hintOpen") : t("app.empty.hintHidden")}</div>
                     </div>
                 ) : (
                     app.tabs.map((tab) => (
@@ -160,7 +162,20 @@ function SessionWindow() {
 
 export default function App() {
     const app = useApp();
+    const t = useT();
     const route = windowRoute();
+
+    // Apply the persisted language preference (settings.language) whenever it
+    // changes; every window shares the same settings so they stay in sync.
+    useEffect(() => {
+        setLanguage(app.settings.language);
+    }, [app.settings.language]);
+
+    // Keep the native window title localized (the custom title bar falls back
+    // to document.title for dedicated windows).
+    useEffect(() => {
+        document.title = route ? t(route.titleKey) : "wsh";
+    }, [route, t]);
 
     useEffect(() => {
         // `config-window` is the flat layout used by the tool windows (no
@@ -187,7 +202,7 @@ export default function App() {
         content = (
             <div className="center-box">
                 <div className="spinner" />
-                <div>正在连接…</div>
+                <div>{t("app.boot.connecting")}</div>
             </div>
         );
     } else if (!route) {

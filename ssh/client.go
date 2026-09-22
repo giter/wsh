@@ -1,4 +1,4 @@
-package sshclient
+package ssh
 
 import (
 	"crypto/x509"
@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // KeyResolver returns the decrypted PEM material for a managed key ID. It is

@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // TestCleanJumpHosts covers the validation applied to a submitted bastion chain.

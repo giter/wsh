@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import { rpc } from "../lib/rpc.js";
+import { useT } from "../lib/i18n.js";
 
 export default function KeyDialog({ item, onSaved, onClose }) {
+    const tr = useT();
     const editing = !!item;
     const [name, setName] = useState(item?.name || "");
     const [comment, setComment] = useState(item?.comment || "");
@@ -25,11 +27,11 @@ export default function KeyDialog({ item, onSaved, onClose }) {
     const save = async () => {
         setStatus({ msg: "", err: false });
         if (!name.trim()) {
-            setStatus({ msg: "请输入密钥名称", err: true });
+            setStatus({ msg: tr("keys.nameRequired"), err: true });
             return;
         }
         if (!editing && !privateKey.trim()) {
-            setStatus({ msg: "请提交私钥内容", err: true });
+            setStatus({ msg: tr("keys.privRequired"), err: true });
             return;
         }
         try {
@@ -50,63 +52,61 @@ export default function KeyDialog({ item, onSaved, onClose }) {
 
     return (
         <Modal
-            title={editing ? "编辑密钥" : "提交密钥"}
+            title={editing ? tr("keys.editTitle") : tr("keys.newTitle")}
             onClose={onClose}
             actions={
                 <>
                     <button className="btn" onClick={onClose}>
-                        取消
+                        {tr("common.cancel")}
                     </button>
                     <button className="btn primary" onClick={save}>
-                        保存
+                        {tr("common.save")}
                     </button>
                 </>
             }
         >
             <label className="field">
-                <span>名称</span>
-                <input autoFocus placeholder="例如：生产服务器" value={name} onChange={(e) => setName(e.target.value)} />
+                <span>{tr("keys.name")}</span>
+                <input autoFocus placeholder={tr("keys.namePlaceholder")} value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             <label className="field">
-                <span>备注</span>
-                <input placeholder="可选备注" value={comment} onChange={(e) => setComment(e.target.value)} />
+                <span>{tr("keys.remark")}</span>
+                <input placeholder={tr("keys.remarkPlaceholder")} value={comment} onChange={(e) => setComment(e.target.value)} />
             </label>
 
             <label className="field">
                 <div className="field-row">
-                    <span>{editing ? "私钥内容（留空保持不变）" : "私钥内容"}</span>
+                    <span>{editing ? tr("keys.privContentKeep") : tr("keys.privContent")}</span>
                     <input ref={fileRef} type="file" style={{ display: "none" }} onChange={onFile} />
                     <button className="btn small" onClick={() => fileRef.current?.click()}>
-                        从文件读取…
+                        {tr("keys.fromFile")}
                     </button>
                 </div>
                 <textarea
                     rows={8}
                     spellCheck={false}
-                    placeholder={editing ? "留空则保持原有私钥不变" : "-----BEGIN OPENSSH PRIVATE KEY-----\n..."}
+                    placeholder={editing ? tr("keys.privPlaceholderEdit") : "-----BEGIN OPENSSH PRIVATE KEY-----\n..."}
                     value={privateKey}
                     onChange={(e) => setPrivateKey(e.target.value)}
                 />
             </label>
 
             <label className="field">
-                <span>口令（私钥已加密时填写）</span>
+                <span>{tr("keys.passphraseLabel")}</span>
                 <input
                     type="password"
                     autoComplete="off"
-                    placeholder="私钥未加密时留空"
+                    placeholder={tr("keys.passphrasePlaceholder")}
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
                 />
             </label>
             <label className="check-row">
                 <input type="checkbox" checked={savePassphrase} onChange={(e) => setSavePassphrase(e.target.checked)} />
-                记住口令（加密落盘；不勾选则每次连接时询问）
+                {tr("keys.rememberPass")}
             </label>
 
-            <div className="hint">
-                私钥仅保存在本机（加密落盘），不会上传；口令默认不保存，只在连接时询问。复制公钥并追加到服务器的 ~/.ssh/authorized_keys 即可用该密钥登录。
-            </div>
+            <div className="hint">{tr("keys.hint")}</div>
             <div className={"status-msg" + (status.err ? " err" : "")}>{status.msg}</div>
         </Modal>
     );

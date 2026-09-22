@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { WINDOW_NAME, hasCustomChrome, installWindowGestures, windowControl } from "../lib/windowChrome.js";
+import { useT } from "../lib/i18n.js";
 
 // Per-window chrome configuration, keyed by the "?win=" value. Windows not
 // listed here (i.e. every dedicated tool window) show their own title.
 const CHROME = {
     main: { brand: true, menu: true },
-    sftp: { title: "文件传输" },
-    tunnels: { title: "端口隧道" },
-    settings: { title: "选项" },
-    keys: { title: "密钥管理" },
+    sftp: { title: "app.win.sftp" },
+    tunnels: { title: "app.win.tunnels" },
+    settings: { title: "app.win.settings" },
+    keys: { title: "app.win.keys" },
 };
 
 const ICONS = {
@@ -26,6 +27,7 @@ const ICONS = {
 // only drawn in the session window; the tool windows render just their title.
 export default function TitleBar() {
     const app = useApp();
+    const t = useT();
     const [openMenu, setOpenMenu] = useState(null);
     const [maximised, setMaximised] = useState(false);
     const custom = hasCustomChrome();
@@ -79,43 +81,43 @@ export default function TitleBar() {
 
     const menus = [
         {
-            label: "文件",
+            label: t("titlebar.menu.file"),
             items: [
-                { label: "新建连接", accel: "Ctrl+N", run: () => app.appAction("new-connection") },
+                { label: t("titlebar.menu.newConnection"), accel: "Ctrl+N", run: () => app.appAction("new-connection") },
                 { sep: true },
-                { label: "退出", accel: "Ctrl+Q", run: () => app.appAction("quit") },
+                { label: t("titlebar.menu.quit"), accel: "Ctrl+Q", run: () => app.appAction("quit") },
             ],
         },
         {
-            label: "选项",
+            label: t("titlebar.menu.options"),
             items: [
-                { label: "选项…", accel: "Ctrl+Shift+,", run: () => app.appAction("settings") },
-                { label: "密钥管理…", accel: "Ctrl+Shift+K", run: () => app.appAction("keys") },
+                { label: t("titlebar.menu.optionsDots"), accel: "Ctrl+Shift,", run: () => app.appAction("settings") },
+                { label: t("titlebar.menu.keys"), accel: "Ctrl+Shift+K", run: () => app.appAction("keys") },
             ],
         },
         {
-            label: "视图",
+            label: t("titlebar.menu.view"),
             items: [
-                { label: "放大", accel: "Ctrl++", run: () => app.zoomFont(1) },
-                { label: "缩小", accel: "Ctrl+-", run: () => app.zoomFont(-1) },
-                { label: "重置缩放", accel: "Ctrl+0", run: () => app.resetZoom() },
+                { label: t("titlebar.menu.zoomIn"), accel: "Ctrl++", run: () => app.zoomFont(1) },
+                { label: t("titlebar.menu.zoomOut"), accel: "Ctrl+-", run: () => app.zoomFont(-1) },
+                { label: t("titlebar.menu.zoomReset"), accel: "Ctrl+0", run: () => app.resetZoom() },
                 { sep: true },
-                { label: "会话管理器", accel: "Ctrl+1", run: () => app.appAction("sessions") },
+                { label: t("titlebar.menu.sessions"), accel: "Ctrl+1", run: () => app.appAction("sessions") },
                 {
-                    label: app.reasonOpen ? "隐藏 AI 推理窗格" : "显示 AI 推理窗格",
+                    label: app.reasonOpen ? t("titlebar.menu.reasonHide") : t("titlebar.menu.reasonShow"),
                     accel: "Ctrl+Shift+A",
                     run: () => app.toggleReason(),
                 },
                 { sep: true },
-                { label: "文件传输", accel: "Ctrl+2", run: () => app.appAction("sftp") },
-                { label: "端口隧道", accel: "Ctrl+3", run: () => app.appAction("tunnels") },
+                { label: t("titlebar.menu.sftp"), accel: "Ctrl+2", run: () => app.appAction("sftp") },
+                { label: t("titlebar.menu.tunnels"), accel: "Ctrl+3", run: () => app.appAction("tunnels") },
             ],
         },
         {
-            label: "帮助",
+            label: t("titlebar.menu.help"),
             items: [
-                { label: "关于 wsh", run: () => app.openDialog({ type: "about" }) },
-                { label: "开发者工具", run: () => app.appAction("devtools") },
+                { label: t("titlebar.menu.about"), run: () => app.openDialog({ type: "about" }) },
+                { label: t("titlebar.menu.devtools"), run: () => app.appAction("devtools") },
             ],
         },
     ];
@@ -136,7 +138,7 @@ export default function TitleBar() {
                         <span>WSH</span>
                     </>
                 ) : (
-                    cfg.title || document.title
+                    cfg.title ? t(cfg.title) : document.title
                 )}
             </div>
 
@@ -186,15 +188,15 @@ export default function TitleBar() {
             <div className="tb-spacer" onDoubleClick={toggleMaximise} />
 
             <div className="tb-controls">
-                <button type="button" className="tb-btn" title="最小化" onClick={() => windowControl("minimise")} dangerouslySetInnerHTML={{ __html: ICONS.minimise }} />
+                <button type="button" className="tb-btn" title={t("titlebar.btn.minimise")} onClick={() => windowControl("minimise")} dangerouslySetInnerHTML={{ __html: ICONS.minimise }} />
                 <button
                     type="button"
                     className="tb-btn"
-                    title={maximised ? "还原" : "最大化"}
+                    title={maximised ? t("titlebar.btn.restore") : t("titlebar.btn.maximise")}
                     onClick={toggleMaximise}
                     dangerouslySetInnerHTML={{ __html: maximised ? ICONS.restore : ICONS.maximise }}
                 />
-                <button type="button" className="tb-btn close" title="关闭" onClick={() => windowControl("close")} dangerouslySetInnerHTML={{ __html: ICONS.close }} />
+                <button type="button" className="tb-btn close" title={t("titlebar.btn.close")} onClick={() => windowControl("close")} dangerouslySetInnerHTML={{ __html: ICONS.close }} />
             </div>
         </div>
     );

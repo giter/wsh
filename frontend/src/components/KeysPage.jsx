@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
+import { useT } from "../lib/i18n.js";
 
 // copyText copies to the clipboard, falling back to a hidden textarea when the
 // async Clipboard API is unavailable or denied inside the webview.
@@ -29,6 +30,7 @@ function fallbackCopy(text) {
 }
 
 export default function KeysPage() {
+    const tr = useT();
     const app = useApp();
     const [keys, setKeys] = useState([]);
     const [error, setError] = useState("");
@@ -49,18 +51,18 @@ export default function KeysPage() {
     const remove = (k) =>
         app.openDialog({
             type: "confirm",
-            title: "删除密钥",
+            title: tr("keys.deleteTitle"),
             body: (
                 <>
                     <p>
-                        删除密钥 <b>{k.name}</b>？
+                        {tr("keys.deleteConfirm", { name: k.name })}
                     </p>
                     <p className="muted" style={{ marginTop: 6 }}>
-                        使用该密钥的连接将不再使用它，改回密码或其他方式认证。
+                        {tr("keys.deleteWarning")}
                     </p>
                 </>
             ),
-            confirmLabel: "删除",
+            confirmLabel: tr("keys.confirmDelete"),
             onConfirm: async () => {
                 await rpc.call("keys.delete", { id: k.id });
                 refresh();
@@ -72,15 +74,15 @@ export default function KeysPage() {
             <header className="config-head">
                 <div className="config-head-icon">🔑</div>
                 <div className="config-head-text">
-                    <h2>密钥管理</h2>
-                    <p>提交私钥，连接登录时优先使用密钥认证</p>
+                    <h2>{tr("keys.title")}</h2>
+                    <p>{tr("keys.desc")}</p>
                 </div>
                 <div className="spacer" />
                 <button
                     className="btn primary"
                     onClick={() => app.openDialog({ type: "key", key: null, onSaved: refresh })}
                 >
-                    ＋ 提交密钥
+                    {tr("keys.submitBtn")}
                 </button>
             </header>
 
@@ -91,8 +93,8 @@ export default function KeysPage() {
                     ) : keys.length === 0 ? (
                         <div className="empty-state">
                             <div className="es-icon">🔑</div>
-                            <div className="es-title">还没有密钥</div>
-                            <div className="es-hint">点击右上角「提交密钥」导入你的私钥</div>
+                            <div className="es-title">{tr("keys.emptyTitle")}</div>
+                            <div className="es-hint">{tr("keys.emptyHint")}</div>
                         </div>
                     ) : (
                         keys.map((k) => <KeyCard key={k.id} item={k} onEdit={() => app.openDialog({ type: "key", key: k, onSaved: refresh })} onDelete={() => remove(k)} />)
@@ -101,38 +103,39 @@ export default function KeysPage() {
             </div>
 
             <footer className="config-foot">
-                <div className="muted">共 {keys.length} 个密钥</div>
+                <div className="muted">{tr("keys.count", { count: keys.length })}</div>
             </footer>
         </div>
     );
 }
 
 function KeyCard({ item: k, onEdit, onDelete }) {
+    const tr = useT();
     return (
         <div className="card key-card">
             <div className="key-card-head">
                 <div className="key-name">
                     {k.name}
-                    {k.hasPassphrase && <span className="badge on">已加密</span>}
-                    {k.passphraseSaved && <span className="badge off">已记住口令</span>}
+                    {k.hasPassphrase && <span className="badge on">{tr("keys.encrypted")}</span>}
+                    {k.passphraseSaved && <span className="badge off">{tr("keys.passSaved")}</span>}
                 </div>
                 <div className="key-actions">
                     <button className="btn small" onClick={() => copyText(k.publicKey)}>
-                        复制公钥
+                        {tr("keys.copyPub")}
                     </button>
                     <button className="btn small" onClick={onEdit}>
-                        编辑
+                        {tr("keys.edit")}
                     </button>
                     <button className="btn small danger" onClick={onDelete}>
-                        删除
+                        {tr("keys.delete")}
                     </button>
                 </div>
             </div>
             <div className="key-meta">
-                <span className="tag mono">{k.keyType || "未知类型"}</span>
+                <span className="tag mono">{k.keyType || tr("keys.unknownType")}</span>
                 <span className="mono key-fp">{k.fingerprint || ""}</span>
             </div>
-            <div className="key-pub mono">{k.publicKey || "（无公钥）"}</div>
+            <div className="key-pub mono">{k.publicKey || tr("keys.noPub")}</div>
             {k.comment && <div className="key-comment">{k.comment}</div>}
         </div>
     );

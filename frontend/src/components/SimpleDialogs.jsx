@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { requestLatinInput } from "../state/store.jsx";
+import { useT } from "../lib/i18n.js";
 
 // Small, reusable dialogs: confirm, text prompt, password prompt, notice and
 // the About box.
 
-export function ConfirmDialog({ title, body, confirmLabel = "确定", onConfirm, onClose }) {
+export function ConfirmDialog({ title, body, confirmLabel, onConfirm, onClose }) {
+    const t = useT();
     const [busy, setBusy] = useState(false);
     const run = async () => {
         setBusy(true);
@@ -27,10 +29,10 @@ export function ConfirmDialog({ title, body, confirmLabel = "确定", onConfirm,
             actions={
                 <>
                     <button className="btn" onClick={onClose} disabled={busy}>
-                        取消
+                        {t("common.cancel")}
                     </button>
                     <button className="btn danger" onClick={run} disabled={busy}>
-                        {confirmLabel}
+                        {confirmLabel || t("dialog.confirm")}
                     </button>
                 </>
             }
@@ -41,12 +43,13 @@ export function ConfirmDialog({ title, body, confirmLabel = "确定", onConfirm,
 }
 
 export function PromptDialog({ title, label, initial = "", onSubmit, onClose }) {
+    const t = useT();
     const [value, setValue] = useState(initial);
     const [err, setErr] = useState("");
     const submit = async () => {
         const v = value.trim();
         if (!v) {
-            setErr("不能为空");
+            setErr(t("dialog.promptEmpty"));
             return;
         }
         try {
@@ -63,10 +66,10 @@ export function PromptDialog({ title, label, initial = "", onSubmit, onClose }) 
             actions={
                 <>
                     <button className="btn" onClick={onClose}>
-                        取消
+                        {t("common.cancel")}
                     </button>
                     <button className="btn primary" onClick={submit}>
-                        保存
+                        {t("common.save")}
                     </button>
                 </>
             }
@@ -91,6 +94,7 @@ export function PromptDialog({ title, label, initial = "", onSubmit, onClose }) 
 }
 
 export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
+    const t = useT();
     const [pw, setPw] = useState("");
     // A password is typed as plain ASCII, so start the IME in English rather than
     // whatever composition mode was left active elsewhere in the UI.
@@ -108,13 +112,13 @@ export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
         onCancel?.();
     };
     return (
-        <Modal title="需要密码" onClose={cancel}>
+        <Modal title={t("dialog.needPassword")} onClose={cancel}>
             <div className="status-msg err">{message}</div>
             <label className="field">
                 <input
                     autoFocus
                     type="password"
-                    placeholder="密码"
+                    placeholder={t("dialog.password")}
                     autoComplete="off"
                     value={pw}
                     onChange={(e) => setPw(e.target.value)}
@@ -128,10 +132,10 @@ export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
             </label>
             <div className="modal-actions">
                 <button className="btn" onClick={cancel}>
-                    取消
+                    {t("common.cancel")}
                 </button>
                 <button className="btn primary" onClick={submit}>
-                    连接
+                    {t("common.connect")}
                 </button>
             </div>
         </Modal>
@@ -142,6 +146,7 @@ export function PasswordDialog({ message, onSubmit, onClose, onCancel }) {
 // input stays in memory for the app run only; it is never persisted unless the
 // user opts in from the key manager.
 export function PassphraseDialog({ message, onSubmit, onClose, onCancel }) {
+    const t = useT();
     const [pw, setPw] = useState("");
     // An SSH passphrase is typed as plain ASCII, so start the IME in English
     // rather than whatever composition mode was left active elsewhere in the UI.
@@ -157,13 +162,13 @@ export function PassphraseDialog({ message, onSubmit, onClose, onCancel }) {
         onCancel?.();
     };
     return (
-        <Modal title="需要口令" onClose={cancel}>
+        <Modal title={t("dialog.needPassphrase")} onClose={cancel}>
             <div className="status-msg err">{message}</div>
             <label className="field">
                 <input
                     autoFocus
                     type="password"
-                    placeholder="私钥口令"
+                    placeholder={t("dialog.passphrase")}
                     autoComplete="off"
                     value={pw}
                     onChange={(e) => setPw(e.target.value)}
@@ -177,24 +182,25 @@ export function PassphraseDialog({ message, onSubmit, onClose, onCancel }) {
             </label>
             <div className="modal-actions">
                 <button className="btn" onClick={cancel}>
-                    取消
+                    {t("common.cancel")}
                 </button>
                 <button className="btn primary" onClick={submit}>
-                    连接
+                    {t("common.connect")}
                 </button>
             </div>
         </Modal>
     );
 }
 
-export function NoticeDialog({ title = "提示", message, onClose }) {
+export function NoticeDialog({ title, message, onClose }) {
+    const t = useT();
     return (
         <Modal
-            title={title}
+            title={title || t("dialog.notice")}
             onClose={onClose}
             actions={
                 <button className="btn primary" onClick={onClose}>
-                    关闭
+                    {t("common.close")}
                 </button>
             }
         >
@@ -204,13 +210,14 @@ export function NoticeDialog({ title = "提示", message, onClose }) {
 }
 
 export function AboutDialog({ onClose }) {
+    const t = useT();
     return (
         <Modal
-            title="关于 wsh"
+            title={t("dialog.about")}
             onClose={onClose}
             actions={
                 <button className="btn primary" onClick={onClose}>
-                    关闭
+                    {t("common.close")}
                 </button>
             }
         >
@@ -220,9 +227,9 @@ export function AboutDialog({ onClose }) {
                 </div>
                 <div className="about-title">wsh</div>
                 <div className="about-desc">
-                    基于 Go + Wails v3 的跨平台 SSH 客户端
+                    {t("dialog.aboutDesc1")}
                     <br />
-                    终端渲染：xterm.js
+                    {t("dialog.aboutDesc2")}
                 </div>
             </div>
         </Modal>

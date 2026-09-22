@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
+import { t, useT } from "../lib/i18n.js";
 import ContextMenu from "./ContextMenu.jsx";
 
 // UNGROUPED is the pseudo folder key for connections with no folder. It is not a
@@ -20,6 +21,7 @@ const ROOT = "__root";
 // drop is persisted immediately, so the arrangement survives a restart.
 export default function Sidebar() {
     const app = useApp();
+    const t = useT();
     const [openFolders, setOpenFolders] = useState({});
     const [selectedId, setSelectedId] = useState(null);
     // What is being dragged, and where it would land. Kept in a ref for the
@@ -58,8 +60,8 @@ export default function Sidebar() {
     const newFolder = () =>
         app.openDialog({
             type: "prompt",
-            title: "新建文件夹",
-            label: "文件夹名称",
+            title: t("sidebar.newFolder"),
+            label: t("sidebar.folderNameLabel"),
             onSubmit: async (name) => {
                 await rpc.call("folders.save", { name });
                 await app.refreshConnections();
@@ -69,8 +71,8 @@ export default function Sidebar() {
     const renameFolder = (f) =>
         app.openDialog({
             type: "prompt",
-            title: "重命名文件夹",
-            label: "文件夹名称",
+            title: t("sidebar.renameFolder"),
+            label: t("sidebar.folderNameLabel"),
             initial: f.name,
             onSubmit: async (name) => {
                 await rpc.call("folders.save", { id: f.id, name });
@@ -81,18 +83,18 @@ export default function Sidebar() {
     const deleteFolder = (f) =>
         app.openDialog({
             type: "confirm",
-            title: "删除文件夹",
+            title: t("sidebar.deleteFolder"),
             body: (
                 <>
                     <p>
-                        删除文件夹 <b>{f.name}</b>？
+                        {t("sidebar.deleteFolderBody", { name: f.name })}
                     </p>
                     <p className="muted" style={{ marginTop: 6 }}>
-                        文件夹内的连接不会被删除，只会移回「未分组」。
+                        {t("sidebar.deleteFolderNote")}
                     </p>
                 </>
             ),
-            confirmLabel: "删除",
+            confirmLabel: t("sidebar.confirmDelete"),
             onConfirm: async () => {
                 await rpc.call("folders.delete", { id: f.id });
                 await app.refreshConnections();
@@ -102,18 +104,18 @@ export default function Sidebar() {
     const deleteConn = (c) =>
         app.openDialog({
             type: "confirm",
-            title: "删除连接",
+            title: t("sidebar.deleteConn"),
             body: (
                 <>
                     <p>
-                        删除连接 <b>{c.name}</b>？
+                        {t("sidebar.deleteConnBody", { name: c.name })}
                     </p>
                     <p className="muted" style={{ marginTop: 6 }}>
-                        该操作无法撤销，其依赖的隧道也会一并移除。
+                        {t("sidebar.deleteConnNote")}
                     </p>
                 </>
             ),
-            confirmLabel: "删除",
+            confirmLabel: t("sidebar.confirmDelete"),
             onConfirm: async () => {
                 await rpc.call("connections.delete", { id: c.id });
                 setSelectedId(null);
@@ -136,24 +138,24 @@ export default function Sidebar() {
     const newConn = (folderId) => app.openDialog({ type: "connection", conn: null, draft: { folderId: folderId || "" } });
 
     const connMenu = (c) => [
-        { label: "连接", onClick: () => app.openSession({ connId: c.id }) },
-        { label: "编辑", onClick: () => app.openDialog({ type: "connection", conn: c }) },
+        { label: t("sidebar.menu.connect"), onClick: () => app.openSession({ connId: c.id }) },
+        { label: t("sidebar.menu.edit"), onClick: () => app.openDialog({ type: "connection", conn: c }) },
         { separator: true },
-        { label: "删除", danger: true, onClick: () => deleteConn(c) },
+        { label: t("sidebar.menu.delete"), danger: true, onClick: () => deleteConn(c) },
     ];
 
     const folderMenu = (f) => [
-        { label: "在此新建连接", onClick: () => newConn(f.id) },
+        { label: t("sidebar.newConnHere"), onClick: () => newConn(f.id) },
         { separator: true },
-        { label: "重命名", onClick: () => renameFolder(f) },
-        { label: "删除", danger: true, onClick: () => deleteFolder(f) },
+        { label: t("sidebar.menu.rename"), onClick: () => renameFolder(f) },
+        { label: t("sidebar.menu.delete"), danger: true, onClick: () => deleteFolder(f) },
     ];
 
     // The root node, the ungrouped pseudo folder and the empty background all
     // offer the same "create here" actions.
     const createMenu = (folderId) => [
-        { label: "新建连接", onClick: () => newConn(folderId) },
-        { label: "新建文件夹", onClick: newFolder },
+        { label: t("sidebar.newConn"), onClick: () => newConn(folderId) },
+        { label: t("sidebar.newFolder"), onClick: newFolder },
     ];
 
     // ---- Drag and drop ----
@@ -253,7 +255,7 @@ export default function Sidebar() {
         try {
             await rpc.call("connections.move", { id, folderId, index });
         } catch (err) {
-            app.openDialog({ type: "notice", title: "移动失败", message: err.message });
+            app.openDialog({ type: "notice", title: t("sidebar.moveFailed"), message: err.message });
         }
         await app.refreshConnections();
     };
@@ -291,7 +293,7 @@ export default function Sidebar() {
             try {
                 await rpc.call("connections.reorder", { folderId: key === UNGROUPED ? "" : key, ids });
             } catch (err) {
-                app.openDialog({ type: "notice", title: "排序失败", message: err.message });
+                app.openDialog({ type: "notice", title: t("sidebar.reorderFailed"), message: err.message });
             }
             await app.refreshConnections();
             return;
@@ -324,7 +326,7 @@ export default function Sidebar() {
         <div
             key={c.id}
             className={"tree-row conn" + (c.id === selectedId ? " selected" : "") + dropClass(c.id)}
-            title={`${c.user}@${c.host}:${c.port}（可拖到文件夹）`}
+            title={t("sidebar.connTitle", { target: `${c.user}@${c.host}:${c.port}` })}
             draggable
             onDragStart={(e) => startDrag(e, { type: "conn", id: c.id, key })}
             onDragEnd={endDrag}
@@ -392,7 +394,7 @@ export default function Sidebar() {
                         }}
                         onDrop={(e) => dropInGroup(e, key)}
                     >
-                        {conns.length ? conns.map((c) => connRow(c, key)) : <div className="tree-empty">（空）</div>}
+                        {conns.length ? conns.map((c) => connRow(c, key)) : <div className="tree-empty">{t("sidebar.treeEmpty")}</div>}
                     </div>
                 )}
             </div>
@@ -413,8 +415,8 @@ export default function Sidebar() {
         <aside id="sidebar">
             <div id="sidebar-header">
                 <span className="logo-dot" />
-                <span className="logo-text">会话管理器</span>
-                <button className="panel-collapse" title="收起会话管理器（Ctrl+1 再展开）" onClick={() => app.toggleSessionManager()}>
+                <span className="logo-text">{t("sidebar.title")}</span>
+                <button className="panel-collapse" title={t("sidebar.collapse")} onClick={() => app.toggleSessionManager()}>
                     ✕
                 </button>
             </div>
@@ -426,12 +428,12 @@ export default function Sidebar() {
                     onKeyDown={(e) => {
                         if (e.key === "Escape") setSearch("");
                     }}
-                    placeholder="搜索名称、主机、用户"
+                    placeholder={t("sidebar.searchPlaceholder")}
                     spellCheck={false}
-                    aria-label="搜索会话"
+                    aria-label={t("sidebar.searchAria")}
                 />
                 {search !== "" && (
-                    <button className="search-clear" title="清除搜索" onClick={() => setSearch("")}>
+                    <button className="search-clear" title={t("sidebar.searchClear")} onClick={() => setSearch("")}>
                         ✕
                     </button>
                 )}
@@ -454,29 +456,29 @@ export default function Sidebar() {
                     <span className="node-icon root-icon">
                         <FolderIcon open={rootOpen} />
                     </span>
-                    <span className="lbl">所有会话</span>
+                    <span className="lbl">{t("sidebar.allSessions")}</span>
                 </div>
 
                 {rootOpen && (
                     <div className="tree-children">
-                        {!hasAny && !searching && <div className="tree-empty">还没有连接，在空白处右键新建</div>}
-                        {noResults && <div className="tree-empty">没有匹配的会话</div>}
+                        {!hasAny && !searching && <div className="tree-empty">{t("sidebar.emptyHint")}</div>}
+                        {noResults && <div className="tree-empty">{t("sidebar.noResults")}</div>}
                         {foldersShown.map((f) => folderBranch(f.id, f.name, f))}
                         {/* 未分组 doubles as the drop target for "take out of the
                             folder", so it is shown whenever there is anything to
                             organize. */}
-                        {showUngrouped && folderBranch(UNGROUPED, "未分组", null)}
+                        {showUngrouped && folderBranch(UNGROUPED, t("sidebar.ungrouped"), null)}
 
                         {!searching && (
                             <>
                                 <div className="tree-sep" />
-                                <div className="tree-row tool" onClick={() => app.appAction("sftp")} title="在新窗口中打开">
+                                <div className="tree-row tool" onClick={() => app.appAction("sftp")} title={t("sidebar.openInNewWindow")}>
                                     <span className="node-icon tool-icon">↗</span>
-                                    <span className="lbl">文件传输</span>
+                                    <span className="lbl">{t("sidebar.fileTransfer")}</span>
                                 </div>
-                                <div className="tree-row tool" onClick={() => app.appAction("tunnels")} title="在新窗口中打开">
+                                <div className="tree-row tool" onClick={() => app.appAction("tunnels")} title={t("sidebar.openInNewWindow")}>
                                     <span className="node-icon tool-icon">↗</span>
-                                    <span className="lbl">端口隧道</span>
+                                    <span className="lbl">{t("sidebar.portTunnels")}</span>
                                 </div>
                             </>
                         )}
@@ -487,36 +489,36 @@ export default function Sidebar() {
             {selected && (
                 <div id="sidebar-details">
                     <div className="det-head">
-                        <span className="det-title">属性</span>
-                        <button className="det-close" title="关闭属性" onClick={() => setSelectedId(null)}>
+                        <span className="det-title">{t("sidebar.properties")}</span>
+                        <button className="det-close" title={t("sidebar.closeProps")} onClick={() => setSelectedId(null)}>
                             ✕
                         </button>
                     </div>
-                    <DetailRow k="名称" v={selected.name} />
-                    <DetailRow k="主机" v={selected.host} />
-                    <DetailRow k="端口" v={String(selected.port)} />
-                    <DetailRow k="用户" v={selected.user} />
-                    <DetailRow k="认证" v={authLabel(selected, app.keys)} />
-                    <DetailRow k="文件夹" v={folderName(selected, app.folders)} />
+                    <DetailRow k={t("sidebar.detail.name")} v={selected.name} />
+                    <DetailRow k={t("sidebar.detail.host")} v={selected.host} />
+                    <DetailRow k={t("sidebar.detail.port")} v={String(selected.port)} />
+                    <DetailRow k={t("sidebar.detail.user")} v={selected.user} />
+                    <DetailRow k={t("sidebar.detail.auth")} v={authLabel(selected, app.keys)} />
+                    <DetailRow k={t("sidebar.detail.folder")} v={folderName(selected, app.folders)} />
                     {selected.jumpHostIds?.length > 0 && (
-                        <DetailRow k="跳板机" v={jumpChainLabel(selected, app.connections)} />
+                        <DetailRow k={t("sidebar.detail.jump")} v={jumpChainLabel(selected, app.connections)} />
                     )}
                     {app.stats[selected.id] && !app.stats[selected.id].error && (
                         <div className="det-stats">
                             <Gauge label="CPU" value={app.stats[selected.id].cpuPercent} />
-                            <Gauge label="内存" value={app.stats[selected.id].memPercent} />
-                            <Gauge label="磁盘" value={app.stats[selected.id].diskPercent} />
+                            <Gauge label={t("sidebar.gauge.mem")} value={app.stats[selected.id].memPercent} />
+                            <Gauge label={t("sidebar.gauge.disk")} value={app.stats[selected.id].diskPercent} />
                         </div>
                     )}
                     <div className="det-actions">
                         <button className="btn primary small" onClick={() => app.openSession({ connId: selected.id })}>
-                            连接
+                            {t("sidebar.menu.connect")}
                         </button>
                         <button className="btn small" onClick={() => app.openDialog({ type: "connection", conn: selected })}>
-                            编辑
+                            {t("sidebar.menu.edit")}
                         </button>
                         <button className="btn small danger" onClick={() => deleteConn(selected)}>
-                            删除
+                            {t("sidebar.menu.delete")}
                         </button>
                     </div>
                 </div>
@@ -636,17 +638,17 @@ function fmtPct(v) {
 function authLabel(conn, keys) {
     if (conn.keyId) {
         const key = keys.find((k) => k.id === conn.keyId);
-        return key ? `密钥 · ${key.name}` : "密钥";
+        return key ? t("sidebar.auth.keyName", { name: key.name }) : t("sidebar.auth.key");
     }
-    if (conn.hasPassword) return "密码";
-    if (conn.privateKeyPath) return "私钥文件";
-    return "无";
+    if (conn.hasPassword) return t("sidebar.auth.password");
+    if (conn.privateKeyPath) return t("sidebar.auth.keyFile");
+    return t("sidebar.auth.none");
 }
 
 function folderName(conn, folders) {
-    if (!conn.folderId) return "未分组";
+    if (!conn.folderId) return t("sidebar.ungrouped");
     const f = folders.find((x) => x.id === conn.folderId);
-    return f ? f.name : "未分组";
+    return f ? f.name : t("sidebar.ungrouped");
 }
 
 // jumpChainLabel renders the bastion path, e.g. "Local → jump-a → db-01".

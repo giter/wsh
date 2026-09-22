@@ -6,26 +6,28 @@ import { rpc } from "../lib/rpc.js";
 import { useApp } from "../state/store.jsx";
 import { base64Encode, base64Decode, triggerDownload } from "../lib/format.js";
 import SmartInput from "./SmartInput.jsx";
+import { t, useT } from "../lib/i18n.js";
 
-// 终端报错特征对应的中文标题（与后端嗅探的 kind 对应）。
+// Terminal error signatures mapped to localized titles (matches the kinds the
+// backend sniffer reports).
 const ERROR_TITLES = {
-    panic: "程序 panic",
-    segfault: "段错误",
-    oom: "内存不足 (OOM)",
-    "disk-full": "磁盘空间不足",
-    fatal: "致命错误",
-    "core-dump": "核心转储",
-    "port-in-use": "端口被占用",
-    permission: "权限不足",
-    "not-found": "命令或文件不存在",
-    connection: "连接失败",
-    denied: "认证失败",
-    timeout: "操作超时",
-    error: "错误输出",
+    panic: "term.err.panic",
+    segfault: "term.err.segfault",
+    oom: "term.err.oom",
+    "disk-full": "term.err.diskFull",
+    fatal: "term.err.fatal",
+    "core-dump": "term.err.coreDump",
+    "port-in-use": "term.err.portInUse",
+    permission: "term.err.permission",
+    "not-found": "term.err.notFound",
+    connection: "term.err.connection",
+    denied: "term.err.denied",
+    timeout: "term.err.timeout",
+    error: "term.err.error",
 };
 
 function errorTitle(kind) {
-    return ERROR_TITLES[kind] || "检测到错误";
+    return t(ERROR_TITLES[kind] || "term.err.detected");
 }
 
 // xterm palettes per app theme. The terminal keeps its own (dark by default)
@@ -76,6 +78,7 @@ const TERM_OPTS = {
 
 export default function TerminalTab({ tab, active }) {
     const app = useApp();
+    const t = useT();
     const wrapRef = useRef(null);
     const termRef = useRef(null);
     const fitRef = useRef(null);
@@ -117,7 +120,7 @@ export default function TerminalTab({ tab, active }) {
         const offExit = rpc.on("terminal.exit", (m) => {
             if (m.sessionId !== sid) return;
             exitedRef.current = true;
-            term.writeln("\r\n\x1b[90m[连接已关闭]\x1b[0m");
+            term.writeln("\r\n\x1b[90m" + t("term.closed") + "\x1b[0m");
         });
         const offZSend = rpc.on("zmodem.send-file", (m) => {
             if (m.sessionId === sid) setZmodem(true);
@@ -128,7 +131,7 @@ export default function TerminalTab({ tab, active }) {
         const offZRecv = rpc.on("zmodem.receive", (m) => {
             if (m.sessionId !== sid) return;
             if (m.name) {
-                term.writeln(`\r\n\x1b[90m[已接收 ${m.name}，正在保存…]\x1b[0m`);
+                term.writeln(`\r\n\x1b[90m${t("term.zrecv", { name: m.name })}\x1b[0m`);
                 triggerDownload(m.name, base64Decode(m.data || ""));
             }
         });
@@ -285,31 +288,31 @@ export default function TerminalTab({ tab, active }) {
                         // The connection has no username, so ask for one and retry
                         // rather than failing with an opaque auth error.
                         setPhase("error");
-                        setErrorMsg(res.message || "需要用户名");
+                        setErrorMsg(res.message || t("term.needUser"));
                         app.openDialog({
                             type: "prompt",
-                            title: "需要登录用户名",
-                            label: "登录用户名",
+                            title: t("term.needUserTitle"),
+                            label: t("term.userLabel"),
                             onSubmit: (name) => connect(password, keyPassphrase, name),
                         });
                         return;
                     }
                     if (res && res.needPassphrase) {
                         setPhase("error");
-                        setErrorMsg(res.message || "需要口令");
+                        setErrorMsg(res.message || t("dialog.needPassphrase"));
                         app.openDialog({
                             type: "passphrase",
-                            message: res.message || "需要口令",
+                            message: res.message || t("dialog.needPassphrase"),
                             onSubmit: (pass) => connect(password, pass, user),
                         });
                         return;
                     }
                     if (res && res.needPassword) {
                         setPhase("error");
-                        setErrorMsg(res.message || "需要密码");
+                        setErrorMsg(res.message || t("dialog.needPassword"));
                         app.openDialog({
                             type: "password",
-                            message: res.message || "需要密码",
+                            message: res.message || t("dialog.needPassword"),
                             onSubmit: (pw) => connect(pw, keyPassphrase, user),
                         });
                         return;
@@ -437,11 +440,11 @@ export default function TerminalTab({ tab, active }) {
                     {phase === "connecting" ? (
                         <div className="center-box">
                             <div className="spinner" />
-                            <div>正在连接 {tab.title} …</div>
+                            <div>{t("term.connecting", { title: tab.title })}</div>
                         </div>
                     ) : (
                         <div className="center-box">
-                            <div className="err">连接失败</div>
+                            <div className="err">{t("term.connectFailed")}</div>
                             <div className="muted">{errorMsg}</div>
                         </div>
                     )}
@@ -466,10 +469,11 @@ export default function TerminalTab({ tab, active }) {
 // not one), so a button is shown instead of clicking the input directly.
 function ZmodemBar({ sessionId, onDismiss, term }) {
     const inputRef = useRef(null);
+    const t = useT();
 
     const send = async (file) => {
         onDismiss();
-        if (term) term.writeln(`\r\n\x1b[90m[正在发送 ${file.name} …]\x1b[0m`);
+        if (term) term.writeln(`\r\n\x1b[90m${t("term.zsend", { name: file.name })}\x1b[0m`);
         try {
             // Chunked upload: a single base64 message would stall WebView2 on
             // large files. 1 MiB per chunk.
@@ -482,15 +486,15 @@ function ZmodemBar({ sessionId, onDismiss, term }) {
                 await rpc.call("zmodem.sendChunk", { sessionId, index: i, data: base64Encode(buf) });
             }
             await rpc.call("zmodem.sendEnd", { sessionId });
-            if (term) term.writeln("\r\n\x1b[90m[发送中，等待远端完成…]\x1b[0m");
+            if (term) term.writeln(`\r\n\x1b[90m${t("term.zwait")}\x1b[0m`);
         } catch (e) {
-            if (term) term.writeln(`\r\n\x1b[90m[发送失败：${e.message}]\x1b[0m`);
+            if (term) term.writeln(`\r\n\x1b[90m${t("term.zfail", { err: e.message })}\x1b[0m`);
         }
     };
 
     return (
         <div className="zmodem-bar">
-            <span>远端 rz 正在等待接收文件</span>
+            <span>{t("term.zmodemWait")}</span>
             <input
                 ref={inputRef}
                 type="file"
@@ -501,7 +505,7 @@ function ZmodemBar({ sessionId, onDismiss, term }) {
                 }}
             />
             <button className="btn primary" onClick={() => inputRef.current?.click()}>
-                选择文件…
+                {t("term.pickFile")}
             </button>
             <button
                 className="btn"
@@ -510,7 +514,7 @@ function ZmodemBar({ sessionId, onDismiss, term }) {
                     rpc.call("zmodem.cancel", { sessionId }).catch(() => {});
                 }}
             >
-                取消
+                {t("common.cancel")}
             </button>
         </div>
     );

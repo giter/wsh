@@ -117,6 +117,9 @@ type Settings struct {
 	// confirmation. Red-zone commands are refused before this list is consulted, so
 	// nothing catastrophic can be smuggled in here.
 	AllowedCommands []string `json:"allowed_commands,omitempty"`
+	// Language is the UI language preference: "auto" (default, follow the
+	// webview locale), "en" or "zh".
+	Language string `json:"language"`
 }
 
 // Tunnel describes a TCP port forward over SSH.

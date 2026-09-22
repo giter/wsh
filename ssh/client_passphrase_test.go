@@ -1,4 +1,4 @@
-package sshclient
+package ssh
 
 import (
 	"crypto/ed25519"
@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // startNoAuthServer listens on a loopback port and accepts any client; it

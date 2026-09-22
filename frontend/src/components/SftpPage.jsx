@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { rpc } from "../lib/rpc.js";
 import { base64Decode, base64Encode, dirOf, fmtSize, joinLocal, triggerDownload } from "../lib/format.js";
+import { useT, t } from "../lib/i18n.js";
 
 export default function SftpPage() {
+    const tr = useT();
     const app = useApp();
     const [connId, setConnId] = useState("");
     const [localPath, setLocalPath] = useState("");
     const [local, setLocal] = useState([]);
     const [remotePath, setRemotePath] = useState("/");
     const [remote, setRemote] = useState([]);
-    const [status, setStatus] = useState({ msg: "选择连接以浏览远程文件", err: false });
+    const [status, setStatus] = useState({ msg: t("sftp.selectConnHint"), err: false });
     const fileRef = useRef(null);
 
     // Credentials typed at a connect prompt. Many connections deliberately do
@@ -32,11 +34,11 @@ export default function SftpPage() {
                 if (!res || !res.needPassword && !res.needPassphrase) return res;
 
                 if (res.needPassphrase) {
-                    if (promptState?.passphrase) return Promise.reject(new Error(res.message || "需要口令"));
+                    if (promptState?.passphrase) return Promise.reject(new Error(res.message || t("dialog.needPassphrase")));
                     return new Promise((resolve, reject) => {
                         app.openDialog({
                             type: "passphrase",
-                            message: res.message || "需要口令",
+                            message: res.message || t("dialog.needPassphrase"),
                             onSubmit: async (pass) => {
                                 credsRef.current = { connId: params.connId, password: creds.password, keyPassphrase: pass };
                                 try {
@@ -45,17 +47,17 @@ export default function SftpPage() {
                                     reject(e);
                                 }
                             },
-                            onCancel: () => reject(new Error("已取消")),
+                            onCancel: () => reject(new Error(t("common.cancelled"))),
                         });
                     });
                 }
 
                 if (res.needPassword) {
-                    if (promptState?.password) return Promise.reject(new Error(res.message || "需要密码"));
+                    if (promptState?.password) return Promise.reject(new Error(res.message || t("dialog.needPassword")));
                     return new Promise((resolve, reject) => {
                         app.openDialog({
                             type: "password",
-                            message: res.message || "需要密码",
+                            message: res.message || t("dialog.needPassword"),
                             onSubmit: async (pw) => {
                                 credsRef.current = { connId: params.connId, password: pw, keyPassphrase: creds.keyPassphrase };
                                 try {
@@ -64,7 +66,7 @@ export default function SftpPage() {
                                     reject(e);
                                 }
                             },
-                            onCancel: () => reject(new Error("已取消")),
+                            onCancel: () => reject(new Error(t("common.cancelled"))),
                         });
                     });
                 }
@@ -82,7 +84,7 @@ export default function SftpPage() {
                 setLocalPath(res.path);
                 setLocal(res.entries);
             } catch (e) {
-                say("读取本地失败：" + e.message, true);
+                say(t("sftp.loadLocalFailed", { msg: e.message }), true);
             }
         },
         [],
@@ -131,7 +133,7 @@ export default function SftpPage() {
             setRemote([]);
             return;
         }
-        say("连接中…");
+        say(t("sftp.connecting"));
         try {
             await loadRemote("/", id);
             say("");
@@ -141,8 +143,8 @@ export default function SftpPage() {
     };
 
     const upload = async (file) => {
-        if (!connId) return say("请先选择连接", true);
-        say(`上传 ${file.name} …`);
+        if (!connId) return say(t("sftp.selectConnFirst"), true);
+        say(t("sftp.uploading", { name: file.name }));
         try {
             const buf = await file.arrayBuffer();
             await call("sftp.upload", {
@@ -151,7 +153,7 @@ export default function SftpPage() {
                 name: file.name,
                 data: base64Encode(buf),
             });
-            say(`已上传 ${file.name}`);
+            say(t("sftp.uploaded", { name: file.name }));
             loadRemote(remotePath).catch(() => {});
         } catch (e) {
             say(e.message, true);
@@ -161,11 +163,11 @@ export default function SftpPage() {
     const download = async (name) => {
         if (!connId) return;
         const remoteFile = (remotePath === "/" ? "" : remotePath) + "/" + name;
-        say(`下载 ${name} …`);
+        say(t("sftp.downloading", { name }));
         try {
             const res = await call("sftp.download", { connId, path: remoteFile });
             triggerDownload(name, base64Decode(res.data));
-            say(`已下载 ${name}`);
+            say(t("sftp.downloaded", { name }));
         } catch (e) {
             say(e.message, true);
         }
@@ -174,8 +176,8 @@ export default function SftpPage() {
     const mkdir = () =>
         app.openDialog({
             type: "prompt",
-            title: "新建目录",
-            label: "目录名",
+            title: t("sftp.mkdir"),
+            label: t("sftp.mkdirName"),
             onSubmit: async (name) => {
                 await call("sftp.mkdir", { connId, parent: remotePath, name });
                 loadRemote(remotePath).catch(() => {});
@@ -185,9 +187,9 @@ export default function SftpPage() {
     return (
         <div className="page" style={{ padding: "12px 16px" }}>
             <div className="toolbar">
-                <label className="muted">连接</label>
+                <label className="muted">{tr("sftp.connection")}</label>
                 <select style={{ width: 220 }} value={connId} onChange={(e) => onSelectConn(e.target.value)}>
-                    <option value="">选择连接…</option>
+                    <option value="">{tr("sftp.selectConnOption")}</option>
                     {app.connections.map((c) => (
                         <option key={c.id} value={c.id}>
                             {c.name}
@@ -204,16 +206,14 @@ export default function SftpPage() {
                         e.target.value = "";
                     }}
                 />
-                <button className="btn" onClick={() => fileRef.current?.click()}>
-                    ⇧ 上传文件
-                </button>
+                <button className="btn" onClick={() => fileRef.current?.click()}>{tr("sftp.uploadFile")}</button>
                 <span className="muted" style={{ color: status.err ? "var(--danger)" : undefined }}>
                     {status.msg}
                 </span>
             </div>
 
             <div className="sftp-body">
-                <Pane title="本地" path={localPath} onUp={() => navigateLocal("..")}>
+                <Pane title={tr("sftp.local")} path={localPath} onUp={() => navigateLocal("..")}>
                     <Entry name=".." isDir openOnClick onOpen={() => navigateLocal("..")} />
                     {local.map((e) => (
                         <Entry
@@ -226,7 +226,7 @@ export default function SftpPage() {
                     ))}
                 </Pane>
 
-                <Pane title="远程" path={remotePath} onUp={() => navigateRemote("..")} onMkdir={mkdir}>
+                <Pane title={tr("sftp.remote")} path={remotePath} onUp={() => navigateRemote("..")} onMkdir={mkdir}>
                     {remotePath !== "/" && <Entry name=".." isDir openOnClick onOpen={() => navigateRemote("..")} />}
                     {remote.map((e) => (
                         <Entry
@@ -237,14 +237,12 @@ export default function SftpPage() {
                             onOpen={e.isDir ? () => navigateRemote(e.name) : undefined}
                             action={
                                 !e.isDir ? (
-                                    <button className="btn small" onClick={() => download(e.name)}>
-                                        下载
-                                    </button>
+                                    <button className="btn small" onClick={() => download(e.name)}>{tr("sftp.download")}</button>
                                 ) : null
                             }
                         />
                     ))}
-                    {!connId && <div className="empty">请选择连接</div>}
+                    {!connId && <div className="empty">{tr("sftp.selectConnEmpty")}</div>}
                 </Pane>
             </div>
         </div>
@@ -252,16 +250,17 @@ export default function SftpPage() {
 }
 
 function Pane({ title, path, onUp, onMkdir, children }) {
+    const tr = useT();
     return (
         <div className="sftp-pane">
             <div className="pane-head">
                 <span className="muted">{title}</span>
                 <span className="pane-path">{path}</span>
-                <button className="icon-btn" title="上级" onClick={onUp}>
+                <button className="icon-btn" title={tr("sftp.parent")} onClick={onUp}>
                     ↑
                 </button>
                 {onMkdir && (
-                    <button className="icon-btn" title="新建目录" onClick={onMkdir}>
+                    <button className="icon-btn" title={tr("sftp.mkdir")} onClick={onMkdir}>
                         ＋
                     </button>
                 )}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { defaultConnName, parseQuickConnect } from "../lib/format.js";
+import { useT } from "../lib/i18n.js";
 
 // QuickConnectBar opens a one-off session straight from an address, without
 // saving a connection first (Xshell's quick connect). Saving is opt-in: the
@@ -8,19 +9,20 @@ import { defaultConnName, parseQuickConnect } from "../lib/format.js";
 // open quick session can be saved later from its tab.
 export default function QuickConnectBar() {
     const app = useApp();
+    const t = useT();
     const [value, setValue] = useState("");
 
-    const notice = (message) => app.openDialog({ type: "notice", title: "快速连接", message });
+    const notice = (message) => app.openDialog({ type: "notice", title: t("quick.title"), message });
 
     // read parses the address, reporting why it is unusable through a notice.
     const read = () => {
         const spec = parseQuickConnect(value, app.settings.defaultUser);
         if (!spec) {
-            notice("请输入地址，例如 ssh://root@10.0.0.1:22");
+            notice(t("quick.badAddress"));
             return null;
         }
         if (!spec.user) {
-            notice("地址里需要包含用户名，例如 ssh://root@10.0.0.1");
+            notice(t("quick.needUser"));
             return null;
         }
         return spec;
@@ -48,12 +50,12 @@ export default function QuickConnectBar() {
 
     return (
         <div id="quick-connect">
-            <span className="qc-label">快速连接</span>
+            <span className="qc-label">{t("quick.title")}</span>
             <input
                 value={value}
                 spellCheck={false}
-                placeholder="ssh://user@host:22（回车直接连接，「保存」写入连接列表）"
-                title="回车直接连接；点「保存」将其保存为连接"
+                placeholder={t("quick.placeholder")}
+                title={t("quick.inputTitle")}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -63,10 +65,10 @@ export default function QuickConnectBar() {
                 }}
             />
             <button className="btn small" onClick={submit}>
-                连接
+                {t("common.connect")}
             </button>
-            <button className="btn small" onClick={save} title="保存为连接（不立即连接）">
-                保存
+            <button className="btn small" onClick={save} title={t("quick.saveTitle")}>
+                {t("common.save")}
             </button>
         </div>
     );

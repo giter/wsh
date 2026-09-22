@@ -1,5 +1,6 @@
 import { useApp } from "../state/store.jsx";
 import { defaultConnName } from "../lib/format.js";
+import { useT } from "../lib/i18n.js";
 
 // A session tab's title can be renamed; the fixed utility pages cannot.
 function isRenameable(t) {
@@ -14,6 +15,7 @@ function isUnsavedSession(t) {
 
 export default function TabBar() {
     const app = useApp();
+    const t = useT();
     const { tabs, activeTab, selectTab, closeTab, openDialog } = app;
 
     // rename edits the session title; for a saved connection the connection's
@@ -24,8 +26,8 @@ export default function TabBar() {
         const conn = connId ? app.connections.find((c) => c.id === connId) : null;
         openDialog({
             type: "prompt",
-            title: conn ? "重命名连接" : "重命名标签页",
-            label: conn ? "连接名称" : "标签页标题",
+            title: conn ? t("tabs.renameConn") : t("tabs.renameTab"),
+            label: conn ? t("tabs.connNameLabel") : t("tabs.tabTitleLabel"),
             initial: t.title,
             onSubmit: async (name) => {
                 if (conn) await app.renameConnection(conn, name);
@@ -56,13 +58,13 @@ export default function TabBar() {
                         onClick={() => selectTab(t.id)}
                         onDoubleClick={renameable ? () => rename(t) : undefined}
                     >
-                        <span className="tab-title" title={renameable ? `${t.title}（双击重命名）` : t.title}>
+                        <span className="tab-title" title={renameable ? t("tabs.titleHint", { title: t.title }) : t.title}>
                             {t.title}
                         </span>
                         {isUnsavedSession(t) && (
                             <button
                                 className="tab-save"
-                                title="保存为连接"
+                                title={t("tabs.saveAsConn")}
                                 onDoubleClick={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -84,7 +86,7 @@ export default function TabBar() {
                     </div>
                 );
             })}
-            <button className="tab-add" title="新建连接" onClick={() => openDialog({ type: "connection", conn: null })}>
+            <button className="tab-add" title={t("tabs.newConn")} onClick={() => openDialog({ type: "connection", conn: null })}>
                 ＋
             </button>
         </div>

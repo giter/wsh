@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"sshclient/internal/safety"
+	"github.com/lijiajie/wsh/internal/safety"
 )
 
 // This file wires the local AST safety engine into the terminal path.

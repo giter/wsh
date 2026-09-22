@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 // tunnelView is the tunnel shape sent to the browser.

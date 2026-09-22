@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 
-	"sshclient/storage"
+	"github.com/lijiajie/wsh/storage"
 )
 
 func (s *Server) handleGetSettings(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -30,6 +30,9 @@ type settingsView struct {
 	// field is inverted (see storage.Settings) but the view exposes the positive
 	// form, which is what the UI reasons about.
 	AIAutoRun bool `json:"aiAutoRun"`
+	// Language is the UI language preference: "auto" (default, follow the
+	// webview locale), "en" or "zh".
+	Language string `json:"language"`
 }
 
 func toSettingsView(st storage.Settings) settingsView {
@@ -48,6 +51,7 @@ func toSettingsView(st storage.Settings) settingsView {
 		AIAutoAnalyze: st.AIAutoAnalyze,
 		AINoContext:   st.AINoContext,
 		AIAutoRun:     !st.AINoAutoRun,
+		Language:      st.Language,
 	}
 }
 
@@ -72,6 +76,8 @@ type saveSettingsParams struct {
 	// AIAutoRun is a plain bool here: the caller always sends it (like the other AI
 	// options), and it is inverted only on the way to disk.
 	AIAutoRun bool `json:"aiAutoRun"`
+	// Language is "auto", "en" or "zh".
+	Language string `json:"language"`
 }
 
 func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -103,6 +109,9 @@ func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interf
 		}
 		encKey = enc
 	}
+	if p.Language != "en" && p.Language != "zh" {
+		p.Language = "auto"
+	}
 
 	st := storage.Settings{
 		FontSize:         p.FontSize,
@@ -119,6 +128,7 @@ func (s *Server) handleSaveSettings(c *wsClient, params json.RawMessage) (interf
 		AIAutoAnalyze:  p.AIAutoAnalyze,
 		AINoContext:    p.AINoContext,
 		AINoAutoRun:    !p.AIAutoRun,
+		Language:       p.Language,
 	}
 	if err := s.store.UpdateSettings(st); err != nil {
 		return nil, err
