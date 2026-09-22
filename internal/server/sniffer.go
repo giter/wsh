@@ -29,6 +29,12 @@ type sniffer struct {
 	// recent holds the tail of the visible output, used as (masked) context for
 	// the reasoning panel. Capped so a runaway log cannot grow it without bound.
 	recent []byte
+
+	// cap is the command output currently being attributed to a reasoning card
+	// (nil when nothing is being tracked). capSeq makes a stale timer harmless:
+	// each arming gets a fresh sequence number and timers validate it.
+	cap    *execCapture
+	capSeq int
 }
 
 func newSniffer(sessionID string) *sniffer {
@@ -73,6 +79,7 @@ func (s *sniffer) feed(chunk []byte, push func(interface{})) {
 	// Error detection works on the visible text only.
 	text := stripANSI(string(buf))
 	s.remember(text)
+	s.appendCapture(text, push)
 	s.scanErrors(text, push)
 }
 
@@ -83,6 +90,208 @@ func (s *sniffer) remember(text string) {
 	if len(s.recent) > recentCap {
 		s.recent = append([]byte{}, s.recent[len(s.recent)-recentCap:]...)
 	}
+}
+
+// Command output capture -----------------------------------------------------
+//
+// A command the user ran from a reasoning card is tracked so its output can be
+// handed back to the model as the next turn of the same conversation. The tap
+// cannot see the shell's own view of the prompt, so the end of a command's output
+// is inferred: the stream goes quiet *and* its tail looks like a shell prompt.
+// Both conditions are required, and the result is only used as advisory context,
+// so a mis-detection costs a truncated analysis, never a lost command.
+const (
+	// captureQuiet is how long the output must be silent before the segment is
+	// considered finished.
+	captureQuiet = 400 * time.Millisecond
+	// captureQuietGrace is the extra silence allowed when the quiet period
+	// elapsed but no prompt is visible yet (a command that prints without a
+	// trailing newline).
+	captureQuietGrace = 1500 * time.Millisecond
+	// captureTimeout is the hard limit for one command, so a streaming command
+	// (`tail -f`, `journalctl -f`) still hands over what it printed so far.
+	captureTimeout = 30 * time.Second
+	// captureLimit bounds one segment, keeping a runaway log out of the model.
+	captureLimit = 32 << 10
+)
+
+// execCapture accumulates the output of one tracked command.
+type execCapture struct {
+	seq     int
+	trackID string
+	command string
+	start   time.Time
+	// lastData is when output last arrived; completion waits for silence after it.
+	lastData time.Time
+	text     []byte
+	// grace records that the prompt-less grace period was already granted.
+	grace    bool
+	trunc    bool
+	finished bool
+	timer    *time.Timer
+	hard     *time.Timer
+}
+
+// armCapture starts recording output for the card identified by trackID. A capture
+// still in flight is flushed first, so two commands never share one segment.
+func (s *sniffer) armCapture(trackID, command string, push func(interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.finishCaptureLocked(push, false)
+
+	now := time.Now()
+	s.capSeq++
+	c := &execCapture{
+		seq:      s.capSeq,
+		trackID:  trackID,
+		command:  command,
+		start:    now,
+		lastData: now,
+	}
+	s.cap = c
+	c.timer = time.AfterFunc(captureQuiet, func() { s.captureIdle(c.seq, push) })
+	c.hard = time.AfterFunc(captureTimeout, func() { s.captureOverran(c.seq, push) })
+}
+
+// finishCapture flushes the active capture, if any.
+func (s *sniffer) finishCapture(push func(interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.finishCaptureLocked(push, false)
+}
+
+// stop drops the capture timers when the session ends. Nothing is pushed: the
+// browser socket is already gone.
+func (s *sniffer) stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.finishCaptureLocked(nil, false)
+}
+
+// appendCapture feeds one chunk of visible text to the active capture. Callers
+// must hold s.mu.
+func (s *sniffer) appendCapture(text string, push func(interface{})) {
+	c := s.cap
+	if c == nil || c.finished {
+		return
+	}
+	if s.altScreen {
+		// A full-screen application owns the screen now: there is no
+		// line-oriented output left to attribute to the command.
+		s.finishCaptureLocked(push, false)
+		return
+	}
+	now := time.Now()
+	c.lastData = now
+	if text == "" {
+		return
+	}
+	c.text = append(c.text, text...)
+	if len(c.text) >= captureLimit {
+		c.text = c.text[:captureLimit]
+		c.trunc = true
+		s.finishCaptureLocked(push, false)
+	}
+}
+
+// captureIdle runs when the output has been silent for a while. It only finishes
+// the segment when the tail looks like a shell prompt, giving a command that is
+// slow to print its prompt one extra grace period.
+func (s *sniffer) captureIdle(seq int, push func(interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c := s.cap
+	if c == nil || c.seq != seq || c.finished {
+		return
+	}
+	need := captureQuiet
+	if c.grace {
+		need = captureQuietGrace
+	}
+	if quiet := time.Since(c.lastData); quiet < need {
+		// Output arrived after the timer was armed; wait out the remainder.
+		c.timer = time.AfterFunc(need-quiet, func() { s.captureIdle(seq, push) })
+		return
+	}
+	if !c.grace && !looksLikePrompt(string(c.text)) {
+		c.grace = true
+		c.timer = time.AfterFunc(captureQuietGrace, func() { s.captureIdle(seq, push) })
+		return
+	}
+	s.finishCaptureLocked(push, false)
+}
+
+// captureOverran ends a segment that never went quiet.
+func (s *sniffer) captureOverran(seq int, push func(interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.cap
+	if c == nil || c.seq != seq || c.finished {
+		return
+	}
+	s.finishCaptureLocked(push, true)
+}
+
+// finishCaptureLocked emits the active capture and clears it. Callers must hold
+// s.mu. A nil push (session teardown) drops the segment silently.
+func (s *sniffer) finishCaptureLocked(push func(interface{}), timedOut bool) {
+	c := s.cap
+	if c == nil {
+		return
+	}
+	s.cap = nil
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	if c.hard != nil {
+		c.hard.Stop()
+	}
+	if c.finished || push == nil {
+		return
+	}
+	c.finished = true
+	push(terminalOutputMsg{
+		Type:       "terminal.output",
+		SessionID:  s.sessionID,
+		TrackID:    c.trackID,
+		Command:    c.command,
+		Text:       string(c.text),
+		DurationMs: time.Since(c.start).Milliseconds(),
+		Truncated:  c.trunc,
+		TimedOut:   timedOut,
+	})
+}
+
+// promptEnds are the characters a shell prompt ends with (bash/zsh `$` and `#`,
+// csh `%`, and the `❯`/`➜` used by prompt themes).
+const promptEnds = "$#%>❯➜λ"
+
+// maxPromptLen bounds the line that may be mistaken for a prompt: real prompts are
+// short, while output that happens to end in "$" is usually part of a longer line.
+const maxPromptLen = 96
+
+// looksLikePrompt reports whether the captured output ends with a shell prompt.
+func looksLikePrompt(text string) bool {
+	line := strings.TrimRight(lastLine(text), " \t")
+	if line == "" {
+		return false
+	}
+	r := []rune(line)
+	if len(r) > maxPromptLen {
+		return false
+	}
+	return strings.ContainsRune(promptEnds, r[len(r)-1])
+}
+
+// lastLine returns the last non-empty line of s.
+func lastLine(s string) string {
+	s = strings.TrimRight(s, "\n")
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 // recentText returns the tail of the visible output for the given session.
@@ -261,4 +470,18 @@ type terminalErrorMsg struct {
 	Kind      string `json:"kind"`
 	Severity  string `json:"severity"`
 	Excerpt   string `json:"excerpt"`
+}
+
+// terminalOutputMsg carries the captured output of one tracked command back to
+// the card that proposed it (TrackID is that card's id). Truncated and TimedOut
+// tell the UI the segment is incomplete, so it can label the analysis honestly.
+type terminalOutputMsg struct {
+	Type       string `json:"type"`
+	SessionID  string `json:"sessionId"`
+	TrackID    string `json:"trackId"`
+	Command    string `json:"command"`
+	Text       string `json:"text"`
+	DurationMs int64  `json:"durationMs"`
+	Truncated  bool   `json:"truncated"`
+	TimedOut   bool   `json:"timedOut"`
 }

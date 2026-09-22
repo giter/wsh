@@ -224,6 +224,8 @@ export default function TerminalTab({ tab, active }) {
                     }
                     sid = res.sessionId;
                     sessionRef.current = sid;
+                    // Publish the id so reasoning cards can reach this PTY.
+                    app.registerSession(tab.id, sid);
                     // term.open must only run once; a password retry reuses it.
                     if (!opened) {
                         opened = true;
@@ -265,6 +267,7 @@ export default function TerminalTab({ tab, active }) {
             disposed = true;
             const s = sessionRef.current;
             if (s && !exitedRef.current) rpc.call("terminal.close", { sessionId: s }).catch(() => {});
+            app.registerSession(tab.id, null);
             onResize.dispose();
             onData.dispose();
             offData();
@@ -294,8 +297,15 @@ export default function TerminalTab({ tab, active }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab.id]);
 
-    // Fit and focus when this tab becomes visible. Hidden tabs have no size, so
-    // fitting must not run while inactive.
+    // Fit and focus when this tab becomes visible, and re-fit whenever the pane
+    // changes size. Hidden tabs have no size, so fitting must not run while
+    // inactive.
+    //
+    // The observer, not just window resizes, is what keeps the terminal honest:
+    // the Smart Input grows by a line as soon as the risk hint (or a command
+    // preview) appears, which shrinks this pane. The xterm viewport is sized in
+    // pixels, so without a re-fit it would overflow the shorter pane and paint
+    // over the input bar below.
     useEffect(() => {
         if (phase !== "ready" || !active) return undefined;
         const doFit = () => {
@@ -305,12 +315,21 @@ export default function TerminalTab({ tab, active }) {
                 /* ignore */
             }
         };
+        let fitTimer = null;
+        const scheduleFit = () => {
+            clearTimeout(fitTimer);
+            fitTimer = setTimeout(doFit, 30);
+        };
         doFit();
         const t = setTimeout(() => termRef.current?.focus(), 60);
         window.addEventListener("resize", doFit);
+        const ro = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleFit) : null;
+        if (ro && wrapRef.current) ro.observe(wrapRef.current);
         return () => {
             clearTimeout(t);
+            clearTimeout(fitTimer);
             window.removeEventListener("resize", doFit);
+            ro?.disconnect();
         };
     }, [phase, active]);
 

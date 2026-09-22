@@ -102,8 +102,18 @@ export function AppProvider({ children }) {
     const [stats, setStats] = useState({});
 
     const reasonSeq = useRef(0);
-    // Maps an in-flight AI request to the reasoning card it updates.
+    // Maps an in-flight AI request to the card (and nested field) it updates, so
+    // several requests can be in flight and a result analysis lands on the card
+    // that proposed the command instead of opening a new one.
     const aiRequests = useRef(new Map());
+    // Long-lived push handlers must see the freshest reasoning pane and AI status.
+    const reasonRef = useRef(reason);
+    reasonRef.current = reason;
+    const aiStatusRef = useRef(aiStatus);
+    aiStatusRef.current = aiStatus;
+    // Maps a terminal tab to its live session id, so a reasoning card can address
+    // the PTY without the id being threaded through every component.
+    const sessions = useRef(new Map());
 
     const settingsRef = useRef(settings);
     settingsRef.current = settings;
@@ -412,32 +422,224 @@ export function AppProvider({ children }) {
     const toggleReason = useCallback(() => setReasonOpen((v) => !v), []);
     const openReason = useCallback(() => setReasonOpen(true), []);
 
-    // askAI starts a streaming request and binds its deltas to a new card. It
-    // resolves with { requestId, kind } so the caller can await the final result
-    // (the Smart Input uses that to build its command preview).
+    // patchCard merges a patch into a reasoning card, or into one of its nested
+    // fields (key === null patches the card itself).
+    const patchCard = useCallback((cardId, key, patch) => {
+        setReason((rs) =>
+            rs.map((r) => {
+                if (r.id !== cardId) return r;
+                if (!key) return { ...r, ...patch };
+                return { ...r, [key]: { ...(r[key] || {}), ...patch } };
+            }),
+        );
+    }, []);
+
+    // askAI starts a streaming request. By default it opens a new card; passing
+    // `into` streams into a field of an existing card instead, which is how a
+    // result analysis stays attached to the command it interprets. It resolves
+    // with { requestId, kind, cardId } so a caller can await the final result.
     const askAI = useCallback(
-        ({ tabId, sessionId, kind, prompt, excerpt, title }) => {
-            const id = pushReason({
-                tabId,
-                kind: "cot",
-                title: title || "AI 推理",
-                status: "streaming",
-                text: "",
-                steps: [],
-            });
+        ({ tabId, sessionId, kind, prompt, excerpt, title, into }) => {
+            const key = into?.key || null;
+            const id = into?.cardId
+                ? into.cardId
+                : pushReason({
+                      tabId,
+                      kind: "cot",
+                      title: title || "AI 推理",
+                      status: "streaming",
+                      text: "",
+                      steps: [],
+                  });
             return rpc.call("ai.ask", { sessionId, kind, prompt, excerpt }).then(
                 (res) => {
-                    if (res && res.requestId) aiRequests.current.set(res.requestId, id);
+                    if (res && res.requestId) aiRequests.current.set(res.requestId, { id, key });
                     return { ...res, cardId: id };
                 },
                 (e) => {
-                    updateReason(id, { status: "error", text: e.message || String(e) });
+                    patchCard(id, key, { status: "error", text: e.message || String(e) });
                     throw e;
                 },
             );
         },
-        [pushReason, updateReason],
+        [patchCard, pushReason],
     );
+
+    // askCommand opens a natural-language turn in the reasoning pane: the user's
+    // own question gets a card of its own, followed by the model's answer. The
+    // bottom bar stays a plain input — the conversation lives entirely on the
+    // right, so nothing is shown twice.
+    const askCommand = useCallback(
+        ({ tabId, sessionId, prompt, title }) => {
+            pushReason({ tabId, kind: "ask", title: title || "我的提问", text: prompt });
+            openReason();
+            return askAI({ tabId, sessionId, kind: "command", prompt, title: "AI 回复" });
+        },
+        [askAI, openReason, pushReason],
+    );
+
+    // analyzeResult closes the loop: it asks the model to interpret the output of a
+    // command the user just ran from a card, and stores the reply on that same
+    // card, so the investigation continues where it started.
+    const analyzeResult = useCallback(
+        ({ tabId, sessionId, cardId, command, output }) => {
+            const text = String(output || "").trim();
+            if (!text) {
+                patchCard(cardId, "analysis", {
+                    status: "done",
+                    text: "命令已执行，没有输出。",
+                    steps: [],
+                    suggestions: [],
+                });
+                return Promise.resolve(null);
+            }
+            patchCard(cardId, "analysis", { status: "streaming", text: "", steps: [], suggestions: [] });
+            return askAI({
+                tabId,
+                sessionId,
+                kind: "result",
+                prompt: command,
+                excerpt: text,
+                into: { cardId, key: "analysis" },
+            });
+        },
+        [askAI, patchCard],
+    );
+
+    // markExec records how a proposed command is doing (running → done) on the
+    // card that proposed it.
+    const markExec = useCallback(
+        (cardId, patch) => {
+            patchCard(cardId, "exec", patch);
+        },
+        [patchCard],
+    );
+
+    // runCommand submits a command through the local safety gate and handles the
+    // two outcomes that must not execute it (blocked / needs approval) in one
+    // place, so the Smart Input and the reasoning cards behave identically.
+    //
+    // trackCardId attributes the command's output back to a card. Only commands
+    // the model proposed are tracked: the output of a hand-typed command does not
+    // belong to any conversation.
+    const runCommand = useCallback(
+        async ({ tabId, sessionId, command, trackCardId, onWritten }) => {
+            const cmd = String(command || "").trim();
+            if (!cmd) return { status: "empty" };
+            const sid = sessionId || sessions.current.get(tabId) || "";
+            if (!sid) return { status: "nosession", message: "会话尚未就绪" };
+
+            const trackId = trackCardId || "";
+            const send = (token) =>
+                rpc.call("terminal.exec", { sessionId: sid, command: cmd, trackId, confirmToken: token || "" });
+            // onWritten fires once the command is actually on the wire, which may
+            // be after the user approves it in the dry-run panel.
+            const written = () => {
+                if (onWritten) onWritten();
+            };
+
+            if (trackId) markExec(trackId, { status: "running", startedAt: Date.now() });
+            try {
+                const res = await send("");
+                if (res.blocked) {
+                    if (trackId) markExec(trackId, { status: "blocked", reason: res.result?.reason || "" });
+                    pushReason({
+                        tabId,
+                        kind: "notice",
+                        title: "已阻断高危命令",
+                        status: "blocked",
+                        text: res.result?.reason || "",
+                        command: cmd,
+                        risk: res.result,
+                    });
+                    openReason();
+                    return {
+                        status: "blocked",
+                        message: res.result?.reason || "该命令已被本地安全引擎阻断",
+                        result: res.result,
+                    };
+                }
+                if (res.confirm) {
+                    // Yellow zone: hand it to the dry-run panel and stop here. The
+                    // command is only sent after the user approves it explicitly.
+                    if (trackId) markExec(trackId, { status: "confirm" });
+                    setPendingConfirm({
+                        tabId,
+                        command: cmd,
+                        result: res.result,
+                        onConfirm: async () => {
+                            try {
+                                const { token } = await rpc.call("safety.confirm", { sessionId: sid, command: cmd });
+                                if (trackId) markExec(trackId, { status: "running", startedAt: Date.now() });
+                                await send(token);
+                                setPendingConfirm(null);
+                                written();
+                            } catch (e) {
+                                setPendingConfirm(null);
+                                if (trackId) markExec(trackId, { status: "error", reason: e.message || String(e) });
+                            }
+                        },
+                        onCancel: () => {
+                            setPendingConfirm(null);
+                            if (trackId) markExec(trackId, { status: "idle" });
+                        },
+                    });
+                    openReason();
+                    return { status: "confirm", result: res.result };
+                }
+                written();
+                return { status: "written", result: res.result };
+            } catch (e) {
+                if (trackId) markExec(trackId, { status: "error", reason: e.message || String(e) });
+                return { status: "error", message: e.message || String(e) };
+            }
+        },
+        [markExec, openReason, pushReason],
+    );
+
+    // runSuggestion promotes a follow-up suggestion into a command card of its own
+    // and runs it, so every step of an investigation keeps its own output and
+    // analysis instead of overwriting the card it came from.
+    const runSuggestion = useCallback(
+        async ({ tabId, sessionId, command, title }) => {
+            const cmd = String(command || "").trim();
+            if (!cmd) return { status: "empty" };
+            const cardId = pushReason({
+                tabId,
+                kind: "cot",
+                title: title || "下一步排查",
+                status: "done",
+                text: "",
+                steps: [],
+                command: cmd,
+            });
+            openReason();
+            const res = await runCommand({ tabId, sessionId, command: cmd, trackCardId: cardId });
+            // Show the real local classification rather than assuming 绿区.
+            if (res?.result) patchCard(cardId, null, { risk: res.result });
+            return res;
+        },
+        [openReason, patchCard, pushReason, runCommand],
+    );
+
+    // latestAICommand returns the newest command the model proposed for a tab. It
+    // is what Tab in the Smart Input fills in, so the mouse never has to travel to
+    // the reasoning pane.
+    const latestAICommand = useCallback((tabId) => {
+        const list = reasonRef.current;
+        for (let i = list.length - 1; i >= 0; i--) {
+            const item = list[i];
+            if (item.tabId === tabId && item.command) return { command: item.command, cardId: item.id };
+        }
+        return null;
+    }, []);
+
+    // registerSession records the live session id of a tab (and clears it on
+    // close), so cards can address the PTY.
+    const registerSession = useCallback((tabId, sessionId) => {
+        if (sessionId) sessions.current.set(tabId, sessionId);
+        else sessions.current.delete(tabId);
+    }, []);
 
     // Host samples arrive while sessions are open; the snapshot covers a window
     // that was just reloaded.
@@ -456,31 +658,42 @@ export function AppProvider({ children }) {
     }, []);
 
     // AI pushes are correlated by requestId, so several requests can be in
-    // flight (e.g. a diagnosis while a command is being generated).
+    // flight (e.g. a diagnosis while a command is being generated). Each entry
+    // names the card and, for a result analysis, the nested field to write into.
     useEffect(() => {
+        const target = (m) => aiRequests.current.get(m.requestId);
         const offDelta = rpc.on("ai.delta", (m) => {
-            const id = aiRequests.current.get(m.requestId);
-            if (!id) return;
+            const t = target(m);
+            if (!t) return;
             const text = m.text || "";
-            setReason((rs) => rs.map((r) => (r.id === id ? { ...r, text: (r.text || "") + text } : r)));
+            setReason((rs) =>
+                rs.map((r) => {
+                    if (r.id !== t.id) return r;
+                    if (!t.key) return { ...r, text: (r.text || "") + text };
+                    const cur = r[t.key] || {};
+                    return { ...r, [t.key]: { ...cur, text: (cur.text || "") + text } };
+                }),
+            );
         });
         const offDone = rpc.on("ai.done", (m) => {
-            const id = aiRequests.current.get(m.requestId);
-            if (!id) return;
+            const t = target(m);
+            if (!t) return;
             aiRequests.current.delete(m.requestId);
             setReason((rs) =>
-                rs.map((r) =>
-                    r.id === id
-                        ? {
-                              ...r,
-                              status: m.ok ? "done" : "error",
-                              text: m.ok ? m.text || r.text : m.error || "AI 请求失败",
-                              steps: m.steps || [],
-                              command: m.command || "",
-                              risk: m.risk || null,
-                          }
-                        : r,
-                ),
+                rs.map((r) => {
+                    if (r.id !== t.id) return r;
+                    const cur = t.key ? r[t.key] || {} : r;
+                    const patch = {
+                        status: m.ok ? "done" : "error",
+                        text: m.ok ? m.text || cur.text || "" : m.error || "AI 请求失败",
+                        steps: m.steps || [],
+                        suggestions: m.suggestions || [],
+                    };
+                    if (!t.key) {
+                        return { ...r, ...patch, command: m.command || "", risk: m.risk || null };
+                    }
+                    return { ...r, [t.key]: { ...cur, ...patch } };
+                }),
             );
         });
         return () => {
@@ -488,6 +701,64 @@ export function AppProvider({ children }) {
             offDone();
         };
     }, []);
+
+    // The output of a tracked command comes back tagged with the card that
+    // proposed it: fill that card in, then let the model interpret the result
+    // without another click. This is the loop that turns "generated a command"
+    // into "finished a diagnosis".
+    useEffect(() => {
+        const offOutput = rpc.on("terminal.output", (m) => {
+            const cardId = m.trackId;
+            if (!cardId) return;
+            markExec(cardId, {
+                status: m.timedOut ? "timeout" : "done",
+                output: m.text || "",
+                durationMs: m.durationMs || 0,
+                truncated: !!m.truncated,
+            });
+            const ai = aiStatusRef.current || {};
+            if (!ai.configured) return;
+            if (ai.noContext) {
+                // Context sharing is off, so there is nothing we are allowed to
+                // send: say so instead of asking the model to analyse thin air.
+                patchCard(cardId, "analysis", {
+                    status: "done",
+                    text: "已关闭终端上下文共享，未自动分析。可在「选项 → AI 推理」中开启后手动追问。",
+                    steps: [],
+                    suggestions: [],
+                });
+                return;
+            }
+            const card = reasonRef.current.find((r) => r.id === cardId);
+            analyzeResult({
+                tabId: card?.tabId,
+                sessionId: m.sessionId,
+                cardId,
+                command: m.command || card?.command || "",
+                output: m.text || "",
+            });
+        });
+        // A session that ends mid-command can never deliver that output, so stop
+        // showing a spinner that will not resolve.
+        const offExit = rpc.on("terminal.exit", (m) => {
+            let tabId = null;
+            for (const [t, s] of sessions.current) {
+                if (s === m.sessionId) tabId = t;
+            }
+            if (!tabId) return;
+            setReason((rs) =>
+                rs.map((r) =>
+                    r.tabId === tabId && r.exec?.status === "running"
+                        ? { ...r, exec: { ...r.exec, status: "error", reason: "会话已关闭，未收到输出" } }
+                        : r,
+                ),
+            );
+        });
+        return () => {
+            offOutput();
+            offExit();
+        };
+    }, [analyzeResult, markExec, patchCard]);
 
     // appAction asks the desktop shell for a native action (open another
     // window, quit, DevTools). Surfaces a dialog when unavailable (headless).
@@ -554,7 +825,13 @@ export function AppProvider({ children }) {
             setPendingConfirm,
             aiStatus,
             askAI,
+            askCommand,
             refreshAIStatus,
+            runCommand,
+            runSuggestion,
+            analyzeResult,
+            latestAICommand,
+            registerSession,
             stats,
         }),
         [
@@ -596,7 +873,13 @@ export function AppProvider({ children }) {
             pendingConfirm,
             aiStatus,
             askAI,
+            askCommand,
             refreshAIStatus,
+            runCommand,
+            runSuggestion,
+            analyzeResult,
+            latestAICommand,
+            registerSession,
             stats,
         ],
     );

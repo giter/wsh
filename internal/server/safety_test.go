@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -146,6 +147,61 @@ func TestHandleTerminalExecEndToEnd(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for the command to reach the remote")
+	}
+}
+
+// TestTerminalExecTracksOutput covers the wiring between the exec gate and the
+// output capture: a command carrying a track id arms the sniffer, and the segment
+// comes back tagged with that id so the UI can attach it to the card that
+// proposed the command. This is the plumbing behind "execute → analyse".
+func TestTerminalExecTracksOutput(t *testing.T) {
+	srv := newTestServer(nil)
+	ws, fr, _ := newTestWs(t, "sess-1")
+	ws.sniff = newSniffer("sess-1")
+
+	captured := make(chan terminalOutputMsg, 2)
+	ws.pushMsg = func(v interface{}) {
+		if m, ok := v.(terminalOutputMsg); ok {
+			captured <- m
+		}
+	}
+	srv.register(ws)
+
+	raw, err := json.Marshal(terminalExecParams{
+		SessionID: "sess-1",
+		Command:   "ps aux | grep wglink",
+		TrackID:   "r9",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.handleTerminalExec(nil, raw); err != nil {
+		t.Fatalf("handleTerminalExec: %v", err)
+	}
+
+	// The command itself still reaches the remote unchanged.
+	select {
+	case got := <-fr.rcvCh:
+		if string(got) != "ps aux | grep wglink\n" {
+			t.Fatalf("remote received %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the command to reach the remote")
+	}
+
+	// The remote answers and prints its next prompt.
+	ws.sniff.feed([]byte("root 292 wglink --serve\r\nlee@debian:~$ "), ws.pushMsg)
+
+	select {
+	case m := <-captured:
+		if m.TrackID != "r9" || m.SessionID != "sess-1" {
+			t.Fatalf("tracking metadata lost: %+v", m)
+		}
+		if !strings.Contains(m.Text, "wglink --serve") {
+			t.Fatalf("captured text is missing the output: %q", m.Text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the tracked output")
 	}
 }
 

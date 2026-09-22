@@ -64,7 +64,9 @@ func (s *Server) handleAIStatus(c *wsClient, params json.RawMessage) (interface{
 type aiAskParams struct {
 	SessionID string `json:"sessionId"`
 	Prompt    string `json:"prompt"`
-	// Kind is "command" (natural language to shell) or "diagnose" (root cause).
+	// Kind is "command" (natural language to shell), "diagnose" (root cause of
+	// a terminal error) or "result" (interpret the output of a command the user
+	// just ran from a card).
 	Kind string `json:"kind"`
 	// Excerpt is explicit context, e.g. the error line the sniffer just found.
 	Excerpt string `json:"excerpt"`
@@ -84,13 +86,18 @@ func (s *Server) handleAIAsk(c *wsClient, params json.RawMessage) (interface{}, 
 		return nil, err
 	}
 	kind := p.Kind
-	if kind != "diagnose" {
+	switch kind {
+	case "diagnose", "result":
+	default:
 		kind = "command"
 	}
 
 	system := ai.SystemPromptCommand()
-	if kind == "diagnose" {
+	switch kind {
+	case "diagnose":
 		system = ai.SystemPromptDiagnose()
+	case "result":
+		system = ai.SystemPromptResult()
 	}
 	user := s.buildUserPrompt(kind, p)
 
@@ -107,27 +114,42 @@ func (s *Server) handleAIAsk(c *wsClient, params json.RawMessage) (interface{}, 
 // unless the user turned context sharing off.
 func (s *Server) buildUserPrompt(kind string, p aiAskParams) string {
 	var b strings.Builder
+	st := s.store.Settings()
+
+	// Resolve the context first: a result analysis must not leave a "命令输出："
+	// header dangling when the user has turned context sharing off.
+	ctx := ""
+	if !st.AINoContext {
+		ctx = p.Excerpt
+		if ctx == "" && p.SessionID != "" {
+			if ws, ok := s.session(p.SessionID); ok && ws.sniff != nil {
+				ctx = ws.sniff.recentText()
+			}
+		}
+		ctx = strings.TrimSpace(ctx)
+	}
+
 	switch kind {
 	case "diagnose":
 		b.WriteString("终端最近输出（已脱敏）：\n")
+	case "result":
+		// The prompt carries the command that ran and the excerpt carries its
+		// captured output, so the model reviews its own suggestion.
+		b.WriteString("已执行命令：")
+		b.WriteString(sanitize.Mask(p.Prompt))
+		b.WriteString("\n命令输出（已脱敏）：\n")
 	default:
 		b.WriteString("用户请求：")
 		b.WriteString(sanitize.Mask(p.Prompt))
 		b.WriteString("\n")
 	}
 
-	st := s.store.Settings()
-	if !st.AINoContext {
-		ctx := p.Excerpt
-		if ctx == "" && p.SessionID != "" {
-			if ws, ok := s.session(p.SessionID); ok && ws.sniff != nil {
-				ctx = ws.sniff.recentText()
-			}
-		}
-		if ctx != "" {
-			b.WriteString(sanitize.Mask(ctx))
-			b.WriteString("\n")
-		}
+	switch {
+	case ctx != "":
+		b.WriteString(sanitize.Mask(ctx))
+		b.WriteString("\n")
+	case kind == "result":
+		b.WriteString("（用户已关闭上下文共享，未附带输出）\n")
 	}
 	return b.String()
 }
@@ -166,7 +188,8 @@ func (s *Server) streamAI(send func(interface{}), provider ai.Provider, requestI
 		Text:      text,
 		Steps:     ai.ParseSteps(text),
 	}
-	if kind == "command" {
+	switch kind {
+	case "command":
 		cmd := ai.GeneratedCommand(text)
 		done.Command = cmd
 		if cmd != "" {
@@ -174,6 +197,10 @@ func (s *Server) streamAI(send func(interface{}), provider ai.Provider, requestI
 			// opinion about risk is ignored.
 			done.Risk = safety.Analyze(cmd)
 		}
+	case "result":
+		// Follow-up commands become buttons on the same card, which is what makes
+		// the investigation a loop instead of a dead end.
+		done.Suggestions = ai.ParseSuggestions(text)
 	}
 	send(done)
 }
@@ -196,4 +223,6 @@ type aiDoneMsg struct {
 	// Command is the single command the model proposed, already classified.
 	Command string        `json:"command,omitempty"`
 	Risk    safety.Result `json:"risk,omitempty"`
+	// Suggestions are the follow-up commands proposed by a result analysis.
+	Suggestions []ai.Suggestion `json:"suggestions,omitempty"`
 }

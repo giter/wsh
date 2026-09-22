@@ -1,6 +1,9 @@
 package ai
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseSteps(t *testing.T) {
 	reply := `[意图分析] 用户需要查找占用 8080 端口的进程
@@ -88,6 +91,72 @@ func TestPromptsMentionFormat(t *testing.T) {
 	}
 	if !contains(SystemPromptDiagnose(), "[根因]") {
 		t.Fatal("the diagnose prompt must ask for the [根因] step the parser expects")
+	}
+	if !contains(SystemPromptResult(), "[后续]") {
+		t.Fatal("the result prompt must ask for the [后续] lines the parser expects")
+	}
+}
+
+func TestParseSuggestions(t *testing.T) {
+	reply := `[结论] 命令执行成功
+[要点] wglink.service 运行正常
+[后续] 查端口连接数::ss -lntp
+[后续] 检查 wglink 日志 :: journalctl -u wglink -n 50 --no-pager
+[后续] 无 :: 无
+[说明] 这一行不是后续动作`
+
+	got := ParseSuggestions(reply)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 suggestions, got %d: %+v", len(got), got)
+	}
+	if got[0].Label != "查端口连接数" || got[0].Command != "ss -lntp" {
+		t.Fatalf("unexpected first suggestion: %+v", got[0])
+	}
+	if got[1].Label != "检查 wglink 日志" || !strings.HasPrefix(got[1].Command, "journalctl") {
+		t.Fatalf("unexpected second suggestion: %+v", got[1])
+	}
+}
+
+// TestParseSuggestionsFallbacks covers the shapes a model realistically emits
+// when it drifts from the requested format.
+func TestParseSuggestionsFallbacks(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    string
+		count int
+		label string
+		cmd   string
+	}{
+		{"label missing uses the command", "[后续] ss -lntp", 1, "ss -lntp", "ss -lntp"},
+		{"prose dropped", "[后续] 建议查看日志。", 0, "", ""},
+		{"placeholder dropped", "[后续] 查日志::tail -f <日志文件>", 0, "", ""},
+		{"none dropped", "[后续] 无操作::无", 0, "", ""},
+		{"long label shortened", "[后续] 这是一个非常非常长的按钮标签超过限制::df -h", 1, "这是一个非常非常长的按钮标签超过…", "df -h"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseSuggestions(tt.in)
+			if len(got) != tt.count {
+				t.Fatalf("got %d suggestions, want %d: %+v", len(got), tt.count, got)
+			}
+			if tt.count == 0 {
+				return
+			}
+			if got[0].Label != tt.label || got[0].Command != tt.cmd {
+				t.Fatalf("got %+v, want label=%q command=%q", got[0], tt.label, tt.cmd)
+			}
+		})
+	}
+}
+
+// TestParseSuggestionsCapped bounds the follow-up row.
+func TestParseSuggestionsCapped(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 10; i++ {
+		b.WriteString("[后续] 步骤::df -h\n")
+	}
+	if got := ParseSuggestions(b.String()); len(got) != maxSuggestions {
+		t.Fatalf("got %d suggestions, want at most %d", len(got), maxSuggestions)
 	}
 }
 

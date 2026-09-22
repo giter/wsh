@@ -40,9 +40,13 @@ func ParseSteps(text string) []Step {
 
 // knownLabels keeps prose such as "[注意]" from being rendered as a reasoning
 // step; the prompt asks for these exact labels.
+//
+// "后续" is deliberately absent: those lines become the suggestion buttons under a
+// result analysis (see ParseSuggestions) rather than reasoning steps.
 var knownLabels = map[string]bool{
 	"意图分析": true, "策略选择": true, "安全判定": true, "生成指令": true,
 	"根因": true, "影响": true, "修复": true, "命令": true, "说明": true, "风险": true,
+	"结论": true, "要点": true, "状态": true,
 }
 
 func isKnownLabel(s string) bool { return knownLabels[s] }
@@ -119,6 +123,80 @@ func SystemPromptCommand() string {
 		"1. [生成指令] 只能是一行命令，不要加 markdown 代码围栏。",
 		"2. 优先使用只读命令；需要变更系统时选择影响最小的写法。",
 		"3. 不要输出解释性段落，不要询问确认。",
+	}, "\n")
+}
+
+// Suggestion is one proposed next step attached to a result analysis. The UI
+// renders each one as a button that drops its command into the input bar.
+type Suggestion struct {
+	Label   string `json:"label"`
+	Command string `json:"command"`
+}
+
+// suggestionSep splits a [后续] line into "<按钮标签> :: <命令>". A shell command
+// almost never contains a bare "::", so the split is unambiguous in practice.
+const suggestionSep = "::"
+
+// maxSuggestions bounds the follow-up buttons on one card.
+const maxSuggestions = 3
+
+// ParseSuggestions extracts the follow-up commands from a result analysis. Lines
+// whose command is empty after cleaning (prose, a placeholder, "无") are dropped,
+// so a model that has nothing to propose simply yields fewer buttons.
+func ParseSuggestions(text string) []Suggestion {
+	var out []Suggestion
+	for _, line := range strings.Split(text, "\n") {
+		m := reStep.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil || strings.TrimSpace(m[1]) != "后续" {
+			continue
+		}
+		body := strings.TrimSpace(m[2])
+		label, raw := "", body
+		if i := strings.Index(body, suggestionSep); i >= 0 {
+			label = strings.TrimSpace(body[:i])
+			raw = strings.TrimSpace(body[i+len(suggestionSep):])
+		}
+		cmd := cleanCommand(raw)
+		if cmd == "" {
+			continue
+		}
+		if label == "" {
+			label = cmd
+		}
+		out = append(out, Suggestion{Label: shortenLabel(label), Command: cmd})
+		if len(out) == maxSuggestions {
+			break
+		}
+	}
+	return out
+}
+
+// maxLabelRunes keeps a button label from stretching the follow-up row.
+const maxLabelRunes = 16
+
+func shortenLabel(s string) string {
+	r := []rune(s)
+	if len(r) <= maxLabelRunes {
+		return s
+	}
+	return string(r[:maxLabelRunes]) + "…"
+}
+
+// SystemPromptResult asks for an interpretation of a command that has just run,
+// ending in a few proposed next steps. It is what closes the loop: the reply is
+// attached to the card that proposed the command, not to a new one.
+func SystemPromptResult() string {
+	return strings.Join([]string{
+		"你是一名资深 Linux/Unix 运维专家，正在分析一条刚在 SSH 终端执行完的命令及其输出。",
+		"严格按以下格式输出，每行一个步骤，不要输出多余内容：",
+		"[结论] <命令是否成功执行，一句话说明>",
+		"[要点] <输出里的关键发现，一行一条，可以有多条>",
+		"[风险] <需要警惕的地方；没有则写 无>",
+		"[后续] <按钮标签>::<一条可直接执行的下一步排查命令>",
+		"要求：",
+		"1. [后续] 输出 2~3 条，标签不超过 12 个字，命令必须是一行且尽量为只读排查命令。",
+		"2. 不要复述敏感信息（IP、密码、密钥）。",
+		"3. 命令没有输出时，[结论] 说明无输出，[要点] 写 无。",
 	}, "\n")
 }
 

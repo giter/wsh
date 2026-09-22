@@ -490,6 +490,10 @@ html, body {
   min-height: 0;
   padding: 8px;
   background: var(--term-bg);
+  /* The xterm viewport is sized in pixels, so it briefly disagrees with the pane
+     when the Smart Input below grows (risk hint / command preview). Clip it
+     rather than letting the canvas paint over the input bar. */
+  overflow: hidden;
 }
 .term-wrap .xterm { height: 100%; }
 /* xterm.js 的 viewport 用浏览器默认滚动条（WebView2 上是浅色的，与主题不搭），
@@ -872,6 +876,13 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 }
 .reason-card.dry-run { border-color: var(--warn); }
 .reason-card.blocked { border-color: rgba(244, 63, 94, .5); }
+/* The user's own turn, so a question is never lost among the answers. */
+.reason-card.ask { border-color: rgba(96, 165, 250, .45); background: rgba(96, 165, 250, .07); }
+.rc-ask-mark { font-size: 12px; }
+.rc-ask-text { color: var(--text); line-height: 1.65; padding-left: 20px; white-space: pre-wrap; word-break: break-word; }
+/* An error raised by the card's own actions (blocked / no session). */
+.rc-note { font-size: 11.5px; margin-top: 6px; padding-left: 2px; }
+.rc-note.err { color: var(--danger); }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .rc-head.clickable { cursor: pointer; }
 .rc-title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -897,6 +908,46 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 .rc-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
 .rc-generated { margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .rc-generated-head { display: flex; align-items: center; justify-content: space-between; color: var(--dim); margin-bottom: 4px; }
+/* The block is focusable so Ctrl+Enter can run the command from the keyboard. */
+.rc-generated:focus { outline: none; }
+.rc-generated:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* Execution state of a command a card proposed. */
+.rc-exec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+.rc-exec.done { color: var(--accent); }
+.rc-exec.caution { color: var(--warn); }
+.rc-exec.blocked { color: var(--danger); }
+
+/* Result analysis: the model's reading of the output, on the same card. */
+.rc-analysis {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.rc-analysis-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--blue);
+  margin-bottom: 6px;
+}
+.rc-followups { margin-top: 8px; }
+.rc-followups-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.rc-followups .rc-actions { flex-wrap: wrap; justify-content: flex-start; margin-top: 0; }
 
 .risk-pill, .sev-pill { font-size: 10.5px; padding: 1px 6px; border-radius: 9px; white-space: nowrap; flex: 0 0 auto; }
 .risk-pill.level-safe { background: rgba(52, 211, 153, .16); color: var(--accent); }
@@ -926,36 +977,38 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 .si-field:focus { outline: none; border-color: var(--accent); }
+/* The shared `input, select, textarea` rule sets width:100% for the stacked form
+   fields on the config pages. Inside this flex row that made the select claim the
+   whole toolbar and squeeze the text field down to its own padding; opting out
+   keeps it at its natural width so the field gets the remaining space. */
+.si-field::placeholder { color: var(--dim); }
 /* Risk highlighting: a dangerous command is visible before Enter is pressed. */
 #smart-input.level-caution .si-field { border-color: var(--warn); }
 #smart-input.level-blocked .si-field { border-color: var(--danger); background: rgba(244, 63, 94, .08); }
-.si-mode { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--dim); padding: 4px 6px; }
+.si-mode { flex: 0 0 auto; width: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--dim); padding: 4px 6px; }
 .si-lock { font-size: 11px; color: var(--faint); white-space: nowrap; }
 .si-lock.level-safe { color: var(--accent); }
 .si-lock.level-caution { color: var(--warn); }
 .si-lock.level-blocked { color: var(--danger); }
-.si-hint { font-size: 11.5px; margin-top: 4px; padding-left: 20px; color: var(--dim); }
-.si-hint.level-caution { color: var(--warn); }
-.si-hint.level-blocked { color: var(--danger); }
-.si-preview { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 8px 10px; }
-.si-preview-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--dim); }
-.si-preview-cmd {
-  display: block;
-  margin: 6px 0;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  color: var(--accent-2);
-  background: #111118;
-  border-radius: 5px;
-  padding: 6px 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
+/* The status line under the input always occupies one line, empty or not: the
+   terminal above is pixel-sized, so a line that appeared and disappeared would
+   reflow it on every keystroke. */
+.si-status {
+  min-height: 17px;
+  line-height: 17px;
+  margin-top: 4px;
+  padding-left: 20px;
+  font-size: 11.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.si-preview-actions { display: flex; align-items: center; gap: 8px; }
-.si-preview-actions .muted { flex: 1; }
-.si-note { font-size: 11.5px; margin-top: 4px; padding-left: 20px; }
-.si-note.err { color: var(--danger); }
-#smart-input.alt-passthrough { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 12px; }
-.mode-pill { background: rgba(96, 165, 250, .16); color: var(--blue); font-size: 10.5px; padding: 1px 7px; border-radius: 9px; }
+.si-status.idle { color: var(--faint); }
+.si-status.level-ai { color: var(--blue); }
+.si-status.level-caution { color: var(--warn); }
+.si-status.level-blocked { color: var(--danger); }
+.si-status.err { color: var(--danger); }
 .spinner.small { width: 12px; height: 12px; border-width: 2px; margin: 0; flex: 0 0 12px; }
 .grow { flex: 1; }
 .muted { color: var(--dim); }

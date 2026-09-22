@@ -1,6 +1,10 @@
 package storage
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // newTestStore returns a store with a temp path so the mutating helpers can
 // persist without touching the real config directory.
@@ -203,6 +207,36 @@ func TestMemoryStoreDoesNotPersist(t *testing.T) {
 	}
 	if got := s.Settings().AIProvider; got != "ollama" {
 		t.Fatalf("settings should still be updated in memory, got %q", got)
+	}
+}
+
+// TestLoadStoreLoadsSettingsWithoutConfigFile covers a fresh install where the
+// user has only ever changed global options: config.json does not exist yet, but
+// settings.json does. Those options (including the AI provider) must still load
+// instead of silently falling back to defaults.
+func TestLoadStoreLoadsSettingsWithoutConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	// UserConfigDir reads XDG_CONFIG_HOME on Unix and AppData on Windows, so
+	// point both at the temp dir to keep the test hermetic on either platform.
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("AppData", dir)
+
+	wshDir := filepath.Join(dir, "wsh")
+	if err := os.MkdirAll(wshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"theme":"light","ai_provider":"openai","ai_model":"gpt-4o-mini"}`
+	if err := os.WriteFile(filepath.Join(wshDir, "settings.json"), []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := LoadStore(filepath.Join(wshDir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s.Settings()
+	if got.Theme != "light" || got.AIProvider != "openai" || got.AIModel != "gpt-4o-mini" {
+		t.Fatalf("settings.json was ignored without config.json: %+v", got)
 	}
 }
 

@@ -2,14 +2,48 @@ package server
 
 import (
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // sink collects push messages in place, so tests can inspect what the sniffer
-// emitted.
-type sink struct{ msgs []interface{} }
+// emitted. The mutex matters for captures: their completion timer pushes from its
+// own goroutine.
+type sink struct {
+	mu   sync.Mutex
+	msgs []interface{}
+}
 
-func (s *sink) push(v interface{}) { s.msgs = append(s.msgs, v) }
+func (s *sink) push(v interface{}) {
+	s.mu.Lock()
+	s.msgs = append(s.msgs, v)
+	s.mu.Unlock()
+}
+
+// snapshot returns a copy of the collected messages.
+func (s *sink) snapshot() []interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]interface{}(nil), s.msgs...)
+}
+
+// await blocks until at least n messages have been collected, so a test can wait
+// for a capture timer instead of sleeping for a fixed period.
+func (s *sink) await(t *testing.T, n int, within time.Duration) []interface{} {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		got := s.snapshot()
+		if len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d pushes, got %d: %+v", n, len(got), got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 func TestSnifferAltScreen(t *testing.T) {
 	sk := &sink{}
@@ -174,5 +208,111 @@ func TestSnifferCarryDoesNotDuplicate(t *testing.T) {
 	s.feed([]byte("tar: /data: Cannot open: Permission denied\n"), sk.push)
 	if len(sk.msgs) != 1 {
 		t.Fatalf("duplicate should be suppressed, got %+v", sk.msgs)
+	}
+}
+
+func TestLooksLikePrompt(t *testing.T) {
+	tests := map[string]bool{
+		"lee@debian:~$ ":                        true,
+		"root@host:/var/log# ":                  true,
+		"$ ":                                    true,
+		"❯ ":                                    true,
+		"(venv) lee@debian:~/app$ ":             true,
+		"total 24\ndrwxr-xr-x 2 root root 4096": false,
+		"lee@debian:~$ ls -la\n":                false,
+		"":                                      false,
+		// A line longer than a real prompt may be output that merely ends in "$".
+		strings.Repeat("a", maxPromptLen) + " $": false,
+	}
+	for in, want := range tests {
+		if got := looksLikePrompt(in); got != want {
+			t.Errorf("looksLikePrompt(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestSnifferCaptureEmitsOnPrompt covers the happy path of the command → output
+// → analysis loop: the segment is only handed over once the shell has printed its
+// next prompt and the stream has gone quiet.
+func TestSnifferCaptureEmitsOnPrompt(t *testing.T) {
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.armCapture("r7", "ps aux | grep wglink", sk.push)
+	if got := sk.snapshot(); len(got) != 0 {
+		t.Fatalf("arming must not push anything: %+v", got)
+	}
+
+	s.feed([]byte("ps aux | grep wglink\r\nroot 292 wglink --serve\r\nlee@debian:~$ "), sk.push)
+
+	got := sk.await(t, 1, 3*time.Second)
+	m, ok := got[0].(terminalOutputMsg)
+	if !ok {
+		t.Fatalf("unexpected message: %+v", got[0])
+	}
+	if m.TrackID != "r7" || m.SessionID != "s1" {
+		t.Fatalf("tracking metadata lost: %+v", m)
+	}
+	if !strings.Contains(m.Text, "wglink --serve") {
+		t.Fatalf("captured text is missing the output: %q", m.Text)
+	}
+	if m.TimedOut || m.Truncated {
+		t.Fatalf("a complete segment must not be flagged: %+v", m)
+	}
+}
+
+// TestSnifferCaptureFlushedByNextCommand keeps two commands' output from landing
+// in the same card.
+func TestSnifferCaptureFlushedByNextCommand(t *testing.T) {
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.armCapture("r1", "first", sk.push)
+	s.feed([]byte("first output\n"), sk.push)
+	s.armCapture("r2", "second", sk.push)
+
+	got := sk.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("arming a second capture should flush the first: %+v", got)
+	}
+	m := got[0].(terminalOutputMsg)
+	if m.TrackID != "r1" || !strings.Contains(m.Text, "first output") {
+		t.Fatalf("unexpected flushed segment: %+v", m)
+	}
+}
+
+// TestSnifferCaptureCancelledByAltScreen stops tracking when a full-screen
+// application takes over: there is no line-oriented output to attribute.
+func TestSnifferCaptureCancelledByAltScreen(t *testing.T) {
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.armCapture("r3", "htop", sk.push)
+	s.feed([]byte("\x1b[?1049h"), sk.push)
+
+	got := sk.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected a mode push and a capture push, got %+v", got)
+	}
+	if _, ok := got[0].(terminalModeMsg); !ok {
+		t.Fatalf("first push should be the alt-screen transition: %+v", got[0])
+	}
+	m, ok := got[1].(terminalOutputMsg)
+	if !ok || m.TrackID != "r3" {
+		t.Fatalf("capture should be flushed: %+v", got[1])
+	}
+}
+
+// TestSnifferCaptureInactiveByDefault guards the common case: output that was not
+// requested by a card must never produce a capture push.
+func TestSnifferCaptureInactiveByDefault(t *testing.T) {
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.feed([]byte("total 24\ndrwxr-xr-x 2 root root 4096\n"), sk.push)
+	s.finishCapture(sk.push)
+
+	if got := sk.snapshot(); len(got) != 0 {
+		t.Fatalf("an untracked session should stay quiet: %+v", got)
 	}
 }

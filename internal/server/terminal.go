@@ -369,6 +369,9 @@ func (ws *WebSession) close() {
 // runCloseHooks fires the session's cleanup callback exactly once.
 func (ws *WebSession) runCloseHooks() {
 	ws.closeOnce.Do(func() {
+		if ws.sniff != nil {
+			ws.sniff.stop()
+		}
 		if ws.onClose != nil {
 			ws.onClose()
 		}

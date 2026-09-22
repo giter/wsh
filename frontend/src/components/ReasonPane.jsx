@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { riskLabel, sevLabel } from "../lib/intent.js";
 
@@ -92,10 +92,20 @@ function DryRunCard({ pending }) {
 
 function ReasonCard({ item, tabId }) {
     const app = useApp();
-    const [open, setOpen] = useState(item.kind !== "cot" || item.status === "streaming");
+    // A card that carries a command stays open: the command, its two action
+    // buttons and the analysis of its output are the whole point of the card.
+    const [open, setOpen] = useState(item.kind !== "cot" || item.status === "streaming" || !!item.command);
 
-    const fill = (cmd) => {
-        app.setDraft({ tabId, text: cmd });
+    // The loop must be visible: when the command runs or its analysis arrives,
+    // reveal the card even if the user had collapsed it.
+    useEffect(() => {
+        if (item.exec || item.analysis) setOpen(true);
+    }, [item.exec, item.analysis]);
+
+    // fill drops a command into the Smart Input. The card id travels with it so
+    // the command's output can still be attributed back here.
+    const fill = (cmd, cardId) => {
+        app.setDraft({ tabId, text: cmd, cardId: cardId || "" });
         app.openReason();
     };
 
@@ -108,6 +118,20 @@ function ReasonCard({ item, tabId }) {
                 </div>
                 <div className="rc-text">{item.text}</div>
                 {item.command && <code className="rc-cmd">{item.command}</code>}
+            </div>
+        );
+    }
+
+    if (item.kind === "ask") {
+        // The user's own turn in the conversation: without it the pane only shows
+        // answers, and there is no way to tell what was asked.
+        return (
+            <div className="reason-card ask">
+                <div className="rc-head">
+                    <span className="rc-ask-mark">💬</span>
+                    <span className="rc-title">{item.title || "我的提问"}</span>
+                </div>
+                <div className="rc-ask-text">{item.text}</div>
             </div>
         );
     }
@@ -157,23 +181,146 @@ function ReasonCard({ item, tabId }) {
                         <pre className="rc-stream">{item.text || (streaming ? "思考中…" : "")}</pre>
                     )}
 
-                    {item.command && (
-                        <div className="rc-generated">
-                            <div className="rc-generated-head">
-                                <span>生成指令</span>
-                                <span className={"risk-pill level-" + (item.risk?.level || "safe")}>
-                                    {riskLabel(item.risk?.level || "safe")}
-                                </span>
-                            </div>
-                            <code className="rc-cmd">{item.command}</code>
-                            <div className="rc-actions">
-                                <button className="btn small" onClick={() => fill(item.command)}>
-                                    填入输入框
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    {item.command && <GeneratedCommand item={item} tabId={tabId} fill={fill} />}
                 </>
+            )}
+        </div>
+    );
+}
+
+// GeneratedCommand is the interactive part of a card: the command the model
+// proposed, the two ways to run it, and — once it has run — the interpretation of
+// its output, attached to this same card. That attachment is what turns "the
+// model wrote a command" into "the model finished a diagnosis".
+function GeneratedCommand({ item, tabId, fill }) {
+    const app = useApp();
+    const [note, setNote] = useState("");
+    const exec = item.exec || {};
+    const analysis = item.analysis;
+    const running = exec.status === "running";
+
+    const run = async () => {
+        if (running) return;
+        setNote("");
+        const res = await app.runCommand({ tabId, command: item.command, trackCardId: item.id });
+        if (res.status === "blocked" || res.status === "error" || res.status === "nosession") {
+            setNote(res.message || "");
+        }
+    };
+
+    // Ctrl+Enter on the focused card runs it, mirroring the Smart Input.
+    const onKeyDown = (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+            e.preventDefault();
+            run();
+        }
+    };
+
+    return (
+        <div className="rc-generated" tabIndex={0} onKeyDown={onKeyDown}>
+            <div className="rc-generated-head">
+                <span>生成指令</span>
+                <span className={"risk-pill level-" + (item.risk?.level || "safe")}>
+                    {riskLabel(item.risk?.level || "safe")}
+                </span>
+            </div>
+            <code className="rc-cmd">{item.command}</code>
+            <div className="rc-actions">
+                <button className="btn small" onClick={() => fill(item.command, item.id)} title="也可以直接按 Tab">
+                    填入 (Tab)
+                </button>
+                <button className="btn primary small" onClick={run} disabled={running} title="Ctrl+Enter">
+                    {running ? "执行中…" : "🚀 立即执行 (Ctrl+↵)"}
+                </button>
+            </div>
+            <ExecStatus exec={exec} />
+            {note && <div className="rc-note err">{note}</div>}
+            {analysis && <ResultAnalysis analysis={analysis} tabId={tabId} />}
+        </div>
+    );
+}
+
+// ExecStatus reports what happened to the command the card proposed.
+function ExecStatus({ exec }) {
+    const status = exec?.status;
+    if (!status || status === "idle") return null;
+    switch (status) {
+        case "running":
+            return (
+                <div className="rc-exec running">
+                    <span className="spinner small" /> 已下发，等待输出…
+                </div>
+            );
+        case "blocked":
+            return <div className="rc-exec blocked">⛔ 已被本地安全引擎阻断{exec.reason ? "：" + exec.reason : ""}</div>;
+        case "confirm":
+            return <div className="rc-exec caution">⚠ 需要确认，见上方影子推演</div>;
+        case "error":
+            return <div className="rc-exec blocked">执行失败{exec.reason ? "：" + exec.reason : ""}</div>;
+        default: {
+            const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
+            const tail = exec.truncated ? "（输出过长，已截断）" : "";
+            if (status === "timeout") {
+                return (
+                    <div className="rc-exec caution">
+                        🟡 命令仍在运行，已截取前 {secs}s 输出{tail}
+                    </div>
+                );
+            }
+            return (
+                <div className="rc-exec done">
+                    🟢 已执行（耗时 {secs}s）{tail}
+                </div>
+            );
+        }
+    }
+}
+
+// ResultAnalysis renders the model's reading of the output, plus one button per
+// proposed next step. Clicking a suggestion runs it as a new card, so every step
+// of the investigation keeps its own output and analysis.
+function ResultAnalysis({ analysis, tabId }) {
+    const app = useApp();
+    const steps = analysis.steps || [];
+    const suggestions = analysis.suggestions || [];
+    const streaming = analysis.status === "streaming";
+
+    const runSuggestion = (s) => {
+        app.runSuggestion({ tabId, command: s.command, title: s.label || "下一步排查" });
+    };
+
+    return (
+        <div className="rc-analysis">
+            <div className="rc-analysis-head">
+                <span>🤖 AI 结果分析</span>
+                {streaming && <span className="spinner small" />}
+                {analysis.status === "error" && <span className="risk-pill level-blocked">失败</span>}
+            </div>
+            {steps.length > 0 ? (
+                <ol className="rc-steps">
+                    {steps.map((s, i) => (
+                        <li key={i}>
+                            <span className="rc-step-label">[{s.label}]</span> {s.detail}
+                        </li>
+                    ))}
+                </ol>
+            ) : (
+                <pre className="rc-stream">{analysis.text || (streaming ? "分析中…" : "")}</pre>
+            )}
+            {suggestions.length > 0 && (
+                <div className="rc-followups">
+                    <div className="rc-followups-head">
+                        <span>快捷追问</span>
+                        <span className="muted">点击即执行，仍需通过本地安全引擎</span>
+                    </div>
+                    <div className="rc-actions">
+                        {suggestions.map((s, i) => (
+                            <button key={i} className="btn small" onClick={() => runSuggestion(s)} title={s.command}>
+                                {s.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             )}
         </div>
     );

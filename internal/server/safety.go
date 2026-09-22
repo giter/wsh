@@ -63,6 +63,11 @@ type terminalExecParams struct {
 	// ConfirmToken is the one-shot token from safety.confirm, required only for
 	// commands the engine classifies as needing confirmation.
 	ConfirmToken string `json:"confirmToken"`
+	// TrackID, when set, asks the backend to capture this command's output and
+	// push it back tagged with the same value. The UI passes the id of the
+	// reasoning card that proposed the command, which is how the model's next turn
+	// gets the output of its own suggestion.
+	TrackID string `json:"trackId"`
 }
 
 // execResult tells the browser what happened to a submitted command.
@@ -100,6 +105,17 @@ func (s *Server) handleTerminalExec(c *wsClient, params json.RawMessage) (interf
 		return out, nil
 	}
 	// Submit the line exactly as typed; the shell echoes it like any other input.
+	//
+	// Tracking is armed before the write so no early output is missed. A plain
+	// submission with no track id ends whatever segment was still open: the
+	// output of two commands must never land in one card.
+	if ws.sniff != nil {
+		if p.TrackID != "" {
+			ws.sniff.armCapture(p.TrackID, p.Command, ws.pushMsg)
+		} else {
+			ws.sniff.finishCapture(ws.pushMsg)
+		}
+	}
 	ws.HandleInput([]byte(p.Command + "\n"))
 	out.Written = true
 	return out, nil

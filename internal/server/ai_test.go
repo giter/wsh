@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"sshclient/internal/ai"
+	sshclient "sshclient/ssh"
+	"sshclient/storage"
 )
 
 // fakeProvider replays canned deltas, so the streaming pipeline can be tested
@@ -135,6 +137,43 @@ func TestBuildUserPromptDiagnoseShape(t *testing.T) {
 	got := srv.buildUserPrompt("diagnose", aiAskParams{Excerpt: "nginx: [emerg] unknown directive"})
 	if !strings.HasPrefix(got, "终端最近输出") {
 		t.Fatalf("unexpected diagnose prompt: %q", got)
+	}
+}
+
+// TestBuildUserPromptResultShape documents the result-analysis layout: the command
+// that ran, then its captured output.
+func TestBuildUserPromptResultShape(t *testing.T) {
+	srv := newTestServer(nil)
+	got := srv.buildUserPrompt("result", aiAskParams{
+		Prompt:  "ps aux | grep wglink",
+		Excerpt: "root 292 wglink --serve",
+	})
+	if !strings.Contains(got, "已执行命令：ps aux | grep wglink") {
+		t.Fatalf("the command should be part of the prompt: %q", got)
+	}
+	if !strings.Contains(got, "root 292 wglink --serve") {
+		t.Fatalf("the captured output should follow the header: %q", got)
+	}
+}
+
+// TestBuildUserPromptResultWithContextOff covers the privacy setting: the output is
+// withheld, and the prompt says so instead of leaving a dangling header.
+func TestBuildUserPromptResultWithContextOff(t *testing.T) {
+	store := storage.NewMemoryStore()
+	if err := store.UpdateSettings(storage.Settings{Theme: "dark", AINoContext: true}); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(store, sshclient.NewPool(nil), sshclient.NewTunnelManager(sshclient.NewPool(nil)), nil)
+
+	got := srv.buildUserPrompt("result", aiAskParams{
+		Prompt:  "ps aux | grep wglink",
+		Excerpt: "root 292 wglink --serve",
+	})
+	if strings.Contains(got, "wglink --serve") {
+		t.Fatalf("context sharing is off, the output must not be sent: %q", got)
+	}
+	if !strings.Contains(got, "已关闭上下文共享") {
+		t.Fatalf("the prompt should explain the missing output: %q", got)
 	}
 }
 

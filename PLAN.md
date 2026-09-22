@@ -281,10 +281,10 @@ func MaskBytes(b []byte) []byte
 
 | 文件 | 作用 |
 | --- | --- |
-| `components/SmartInput.jsx` | 单框双轨输入 + 风险高亮 + 预览行 + 透传模式 |
-| `components/ReasonPane.jsx` | CoT / RCA / 影子推演 / 阻断提示卡片 |
+| `components/SmartInput.jsx` | 纯输入框（不再预览命令）+ 风险高亮 + 透传模式；解析模式为「自动判别 / 仅当命令 / 仅交给 AI」，只决定输入怎么理解；Tab 填入最新 AI 指令，Ctrl+Enter 一键执行；状态行常驻占位并说明当前输入的走向，避免终端重排 |
+| `components/ReasonPane.jsx` | 对话承载区：用户提问卡（`ask`）/ CoT / RCA / 影子推演 / 阻断提示；命令卡片带「填入/立即执行」、执行状态、原地结果分析与快捷追问 |
 | `lib/intent.js` | Shell vs 自然语言判据 + 风险/严重度标签 |
-| `state/store.jsx` | 推理卡片、AI 请求关联、草稿、待确认项、主机采样 |
+| `state/store.jsx` | 推理卡片、AI 请求关联（含卡片内嵌字段）、统一执行入口、命令输出绑定、提问卡、主机采样 |
 | `App.jsx` `TerminalTab.jsx` `Sidebar.jsx` `SettingsPage.jsx` `ConnectionDialog.jsx` `styles.css` | 三栏布局、推送订阅、AI 设置、跳板机选择、仪表盘 |
 
 ### 5.2 实际新增的 RPC
@@ -293,12 +293,20 @@ func MaskBytes(b []byte) []byte
 | --- | --- |
 | `safety.check` | `{command}` → `safety.Result` |
 | `safety.confirm` | `{sessionId, command}` → `{token, result}` |
-| `terminal.exec` | `{sessionId, command, confirmToken}` → `{written, blocked, confirm, result}` |
+| `terminal.exec` | `{sessionId, command, confirmToken, trackId}` → `{written, blocked, confirm, result}` |
 | `ai.status` | → `{configured, provider, model, autoAnalyze, noContext, name}` |
 | `ai.ask` | `{sessionId, prompt, kind, excerpt}` → `{requestId, kind}` |
 | `probes.snapshot` | → `map[connId]HostStats` |
 
-推送：`terminal.mode`、`terminal.error`、`ai.delta`、`ai.done`、`host.stats`。
+`ai.ask` 的 `kind` 为 `command`（自然语言→命令）、`diagnose`（报错根因）或
+`result`（解读刚执行命令的输出，返回 `suggestions` 供卡片生成快捷追问按钮）。
+
+推送：`terminal.mode`、`terminal.error`、`terminal.output`、`ai.delta`、`ai.done`、`host.stats`。
+
+`terminal.exec` 带 `trackId` 时，后端会把这条命令的输出片段随 `terminal.output`
+（`{trackId, command, text, durationMs, truncated, timedOut}`）推回，前端据此把输出
+绑到发起该命令的推理卡片上，自动触发结果分析，形成「提问 → 生成 → 执行 → 解读 →
+追问」的闭环。
 
 ### 5.3 实施中修正的细节 (与清单原文的差异)
 
@@ -309,6 +317,9 @@ func MaskBytes(b []byte) []byte
    `xargs`、`find -exec`、`ssh host rm -rf /`、命令替换、子 shell）。
 3. **退出码侦测降级为输出特征启发式**：交互式 PTY 不提供 per-command `$?`，
    精确实现需注入 `PROMPT_COMMAND`（入侵远端环境），与「零侵入」冲突。
+   同理，命令输出片段的**结束点**也是推断的：`sniffer` 在「输出静默 ≥400ms」
+   且「尾部形似 shell 提示符」时才收尾，否则再给 1.5s 宽限，超 30s 或 32KB
+   则截断交付。误判只影响喂给模型的上下文长度，不会影响命令本身。
 4. **黄区确认用一次性令牌而非布尔开关**：令牌绑定会话 + 命令哈希，2 分钟过期、消费即失效。
 5. **脱敏规则刻意保守**：IPv6 要求具备 `::` 或 8 段（否则会误伤 `18:00:12`），
    IPv4 校验八位组与词边界（否则误伤 `nginx/1.18.0`、`/var/log/1.2.3.4.log`）。

@@ -57,29 +57,31 @@ func LoadStore(path string) (*Store, error) {
 	s := &Store{path: path, settings: defaultSettings()}
 
 	raw, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return s, nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		type disk struct {
+			Connections []*Connection `json:"connections"`
+			Tunnels     []*Tunnel     `json:"tunnels"`
+			Folders     []*Folder     `json:"folders"`
+			Keys        []*SSHKey     `json:"keys"`
 		}
-		return nil, err
+		var d disk
+		if err := json.Unmarshal(raw, &d); err != nil {
+			return nil, err
+		}
+		s.connections = d.Connections
+		s.tunnels = d.Tunnels
+		s.folders = d.Folders
+		s.keys = d.Keys
 	}
-	type disk struct {
-		Connections []*Connection `json:"connections"`
-		Tunnels     []*Tunnel     `json:"tunnels"`
-		Folders     []*Folder     `json:"folders"`
-		Keys        []*SSHKey     `json:"keys"`
-	}
-	var d disk
-	if err := json.Unmarshal(raw, &d); err != nil {
-		return nil, err
-	}
-	s.connections = d.Connections
-	s.tunnels = d.Tunnels
-	s.folders = d.Folders
-	s.keys = d.Keys
 
 	// Settings live in their own file so global options can be edited
-	// without touching connection state.
+	// without touching connection state. They are loaded even when config.json
+	// does not exist yet: a user who only ever changed the options (or the AI
+	// provider) has no connections, and silently falling back to defaults would
+	// discard those choices.
 	if err := s.loadSettings(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
