@@ -5,10 +5,9 @@
   English | <a href="README.zh-CN.md">中文</a>
 </p>
 
-> [!NOTE]
-> Screenshots welcome — the UI is an Xshell-style desktop app: a docked session
-> manager on the left, multi-tab terminal sessions, and separate windows for
-> file transfer, tunnels, keys and options.
+<p align="center">
+  <img src="docs/screenshot.png" alt="wsh main window" width="960" />
+</p>
 
 ## Features
 

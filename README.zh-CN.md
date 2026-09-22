@@ -5,6 +5,10 @@
   <a href="README.md">English</a> | 中文
 </p>
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="wsh 主窗口" width="960" />
+</p>
+
 后端用 Go 实现，界面是内嵌的 Web 前端（Xshell 风格：左侧停靠的会话管理器 +
 多标签会话，文件传输 / 隧道各自独立成窗），终端用 xterm.js 渲染，由 Wails v3
 封装为原生桌面窗口。
