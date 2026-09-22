@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -43,6 +44,12 @@ type Server struct {
 	// probes samples host resources while sessions are open (see probe.go).
 	probes *probeManager
 
+	// aiCancels holds the cancel func of every in-flight AI request, keyed by
+	// request id, so the UI can abandon a generation it no longer wants
+	// (see ai.go and the Esc key in SmartInput).
+	aiMu      sync.Mutex
+	aiCancels map[string]context.CancelFunc
+
 	clientsMu sync.Mutex
 	clients   map[*wsClient]struct{}
 
@@ -60,6 +67,7 @@ func NewServer(store *storage.Store, pool *sshclient.Pool, tm *sshclient.TunnelM
 		confirms:  newConfirmStore(),
 		approvals: newApprovalStore(),
 		clients:   make(map[*wsClient]struct{}),
+		aiCancels: make(map[string]context.CancelFunc),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},

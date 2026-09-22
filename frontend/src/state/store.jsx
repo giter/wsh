@@ -101,6 +101,16 @@ export function AppProvider({ children }) {
     // Host resource samples, keyed by connection ID (see probe.go).
     const [stats, setStats] = useState({});
 
+    // focusByTab records, per tab, the card that most recently received content.
+    // The pane keeps that card expanded as well as the newest one, so an answer
+    // that lands while a newer question is already on screen is shown instead of
+    // folding itself away the instant it arrives.
+    const [focusByTab, setFocusByTab] = useState({});
+    const noteFocus = useCallback((tabId, cardId) => {
+        if (!tabId || !cardId) return;
+        setFocusByTab((m) => (m[tabId] === cardId ? m : { ...m, [tabId]: cardId }));
+    }, []);
+
     const reasonSeq = useRef(0);
     // Maps an in-flight AI request to the card (and nested field) it updates, so
     // several requests can be in flight and a result analysis lands on the card
@@ -114,6 +124,10 @@ export function AppProvider({ children }) {
     // Maps a terminal tab to its live session id, so a reasoning card can address
     // the PTY without the id being threaded through every component.
     const sessions = useRef(new Map());
+    // Maps a terminal tab to the bridge its xterm exposes (mark a command's line,
+    // scroll to it, highlight it). The terminal is the only place that knows where
+    // a command was rendered, so the pane asks it instead of guessing.
+    const terminals = useRef(new Map());
     // Lets the long-lived push handlers reach the latest runner: they are declared
     // before runCommand exists, and must not re-subscribe whenever it changes.
     const runCommandRef = useRef(null);
@@ -434,8 +448,9 @@ export function AppProvider({ children }) {
         const id = `r${++reasonSeq.current}`;
         // Keep the list bounded: the pane is a working surface, not a log.
         setReason((rs) => [...rs, { id, ...item }].slice(-80));
+        noteFocus(item.tabId, id);
         return id;
-    }, []);
+    }, [noteFocus]);
 
     const updateReason = useCallback((id, patch) => {
         setReason((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -449,8 +464,11 @@ export function AppProvider({ children }) {
     const openReason = useCallback(() => setReasonOpen(true), []);
 
     // patchCard merges a patch into a reasoning card, or into one of its nested
-    // fields (key === null patches the card itself).
+    // fields (key === null patches the card itself). A patched card is by
+    // definition the one that just changed, so it takes the focus.
     const patchCard = useCallback((cardId, key, patch) => {
+        const card = reasonRef.current.find((r) => r.id === cardId);
+        if (card) noteFocus(card.tabId, cardId);
         setReason((rs) =>
             rs.map((r) => {
                 if (r.id !== cardId) return r;
@@ -458,7 +476,7 @@ export function AppProvider({ children }) {
                 return { ...r, [key]: { ...(r[key] || {}), ...patch } };
             }),
         );
-    }, []);
+    }, [noteFocus]);
 
     // askAI starts a streaming request. By default it opens a new card; passing
     // `into` streams into a field of an existing card instead, which is how a
@@ -561,6 +579,16 @@ export function AppProvider({ children }) {
             if (!sid) return { status: "nosession", message: "会话尚未就绪" };
 
             const trackId = trackCardId || "";
+            // Pinning the anchor before the write is what makes "回到原始输出" land on
+            // the prompt line the command is echoed on: after the write, the cursor is
+            // already past it.
+            const term = terminals.current.get(tabId);
+            const markAnchor = () => {
+                if (trackId && term?.markAnchor) term.markAnchor(trackId);
+            };
+            const dropAnchor = () => {
+                if (trackId && term?.dropAnchor) term.dropAnchor(trackId);
+            };
             const send = (token) =>
                 rpc.call("terminal.exec", { sessionId: sid, command: cmd, trackId, confirmToken: token || "" });
             // onWritten fires once the command is actually on the wire, which may
@@ -571,8 +599,11 @@ export function AppProvider({ children }) {
 
             if (trackId) markExec(trackId, { status: "running", startedAt: Date.now(), auto: !!auto });
             try {
+                markAnchor();
                 const res = await send("");
                 if (res.blocked) {
+                    // Nothing was written, so there is no line to go back to.
+                    dropAnchor();
                     if (trackId) markExec(trackId, { status: "blocked", reason: res.result?.reason || "" });
                     pushReason({
                         tabId,
@@ -613,6 +644,9 @@ export function AppProvider({ children }) {
                                     scope: scope || "",
                                 });
                                 if (trackId) markExec(trackId, { status: "running", startedAt: Date.now(), auto: !!auto });
+                                // Re-pin: the panel may have waited a while, and the marker must sit
+                                // on the line the command is written to now.
+                                markAnchor();
                                 await rpc.call("terminal.exec", {
                                     sessionId: sid,
                                     command: cmd,
@@ -671,6 +705,58 @@ export function AppProvider({ children }) {
         [openReason, patchCard, pushReason, runCommand],
     );
 
+    // askFollowUp is what a 快捷追问 chip does: the chip's own label becomes the
+    // user's turn in the thread, followed by the recommended command and its run.
+    // One click is the whole gesture — the input box is never involved — and the
+    // command is still classified and (if needed) confirmed like any other.
+    const askFollowUp = useCallback(
+        ({ tabId, sessionId, label, command, title }) => {
+            pushReason({ tabId, kind: "ask", title: "快捷追问", text: label });
+            openReason();
+            return runSuggestion({ tabId, sessionId, command, title: title || label || "下一步排查" });
+        },
+        [openReason, pushReason, runSuggestion],
+    );
+
+    // interruptTab sends Ctrl+C to a tab's PTY. It is the escape hatch for a
+    // command that will not end on its own (`ping` without `-c`, `tail -f`): the
+    // stream stops, the sniffer closes the segment, and the card settles.
+    const interruptTab = useCallback((tabId) => {
+        const sid = sessions.current.get(tabId);
+        if (!sid) return false;
+        rpc.call("terminal.input", { sessionId: sid, data: "\u0003" }).catch(() => {});
+        return true;
+    }, []);
+
+    // cancelAI abandons an in-flight generation (Esc in the Smart Input). The
+    // backend stops streaming and closes the card, so a slow model does not hold
+    // the UI hostage.
+    const cancelAI = useCallback((requestId) => {
+        if (!requestId) return;
+        rpc.call("ai.cancel", { requestId }).catch(() => {});
+    }, []);
+
+    // registerTerminal hands the pane the xterm bridge of a tab (see TerminalTab).
+    const registerTerminal = useCallback((tabId, api) => {
+        if (api) terminals.current.set(tabId, api);
+        else terminals.current.delete(tabId);
+    }, []);
+
+    // revealOutput scrolls the terminal to where the card's command ran and flashes
+    // it. It returns false when that line is gone (scrolled out of the buffer), so
+    // the card can say so instead of appearing to do nothing.
+    const revealOutput = useCallback((tabId, cardId, lines) => {
+        const term = terminals.current.get(tabId);
+        return !!(term && term.reveal && term.reveal(cardId, lines));
+    }, []);
+
+    // hoverOutput highlights (and un-highlights) the region a card refers to while
+    // the pointer is over it, so the right pane and the terminal stay anchored.
+    const hoverOutput = useCallback((tabId, cardId, lines, on) => {
+        const term = terminals.current.get(tabId);
+        if (term && term.hover) term.hover(cardId, lines, on);
+    }, []);
+
     // latestAICommand returns the newest command the model proposed for a tab. It
     // is what Tab in the Smart Input fills in, so the mouse never has to travel to
     // the reasoning pane.
@@ -715,6 +801,7 @@ export function AppProvider({ children }) {
             const t = target(m);
             if (!t) return;
             const text = m.text || "";
+            noteFocus(t.tabId, t.id);
             setReason((rs) =>
                 rs.map((r) => {
                     if (r.id !== t.id) return r;
@@ -728,13 +815,16 @@ export function AppProvider({ children }) {
             const t = target(m);
             if (!t) return;
             aiRequests.current.delete(m.requestId);
+            noteFocus(t.tabId, t.id);
             setReason((rs) =>
                 rs.map((r) => {
                     if (r.id !== t.id) return r;
                     const cur = t.key ? r[t.key] || {} : r;
                     const patch = {
-                        status: m.ok ? "done" : "error",
-                        text: m.ok ? m.text || cur.text || "" : m.error || "AI 请求失败",
+                        // A cancelled turn is neither a success nor a failure: say it was
+                        // abandoned, so the partial text is not mistaken for an answer.
+                        status: m.cancelled ? "cancelled" : m.ok ? "done" : "error",
+                        text: m.cancelled ? "已取消" : m.ok ? m.text || cur.text || "" : m.error || "AI 请求失败",
                         steps: m.steps || [],
                         suggestions: m.suggestions || [],
                     };
@@ -805,6 +895,13 @@ export function AppProvider({ children }) {
                 output: m.text || "",
             });
         });
+        // A command that keeps producing output is announced before it ends, so
+        // the card can show "持续监听中" and offer Ctrl+C instead of a spinner that
+        // looks stuck. The final terminal.output still arrives when it stops.
+        const offStream = rpc.on("terminal.streaming", (m) => {
+            if (!m.trackId) return;
+            markExec(m.trackId, { status: "streaming", elapsedMs: m.elapsedMs || 0 });
+        });
         // A session that ends mid-command can never deliver that output, so stop
         // showing a spinner that will not resolve.
         const offExit = rpc.on("terminal.exit", (m) => {
@@ -823,6 +920,7 @@ export function AppProvider({ children }) {
         });
         return () => {
             offOutput();
+            offStream();
             offExit();
         };
     }, [analyzeResult, markExec, patchCard]);
@@ -896,6 +994,12 @@ export function AppProvider({ children }) {
             refreshAIStatus,
             runCommand,
             runSuggestion,
+            askFollowUp,
+            interruptTab,
+            cancelAI,
+            registerTerminal,
+            revealOutput,
+            hoverOutput,
             analyzeResult,
             latestAICommand,
             registerSession,
@@ -903,6 +1007,7 @@ export function AppProvider({ children }) {
             refreshAllowedCommands,
             revokeAllowed,
             stats,
+            focusByTab,
         }),
         [
             ready,
@@ -947,6 +1052,12 @@ export function AppProvider({ children }) {
             refreshAIStatus,
             runCommand,
             runSuggestion,
+            askFollowUp,
+            interruptTab,
+            cancelAI,
+            registerTerminal,
+            revealOutput,
+            hoverOutput,
             analyzeResult,
             latestAICommand,
             registerSession,
@@ -954,6 +1065,7 @@ export function AppProvider({ children }) {
             refreshAllowedCommands,
             revokeAllowed,
             stats,
+            focusByTab,
         ],
     );
 

@@ -55,6 +55,7 @@ var router = map[string]handler{
 	// AI reasoning (advisory only, see internal/ai)
 	"ai.status": (*Server).handleAIStatus,
 	"ai.ask":    (*Server).handleAIAsk,
+	"ai.cancel": (*Server).handleAICancel,
 
 	// zmodem (lrzsz) — chunked upload (sendBegin/sendChunk/sendEnd)
 	"zmodem.sendBegin": (*Server).handleZmodemSendBegin,

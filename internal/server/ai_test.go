@@ -55,7 +55,7 @@ func TestStreamAIClassifiesModelOutput(t *testing.T) {
 	p := &fakeProvider{chunks: []string{reply[:20], reply[20:]}}
 
 	var msgs []interface{}
-	srv.streamAI(func(v interface{}) { msgs = append(msgs, v) }, p, "req1", "sys", "user", "command")
+	srv.streamAI(context.Background(), func(v interface{}) { msgs = append(msgs, v) }, p, "req1", "sys", "user", "command")
 
 	if len(msgs) != 3 {
 		t.Fatalf("expected 2 deltas + 1 done, got %d: %+v", len(msgs), msgs)
@@ -83,7 +83,7 @@ func TestStreamAIReportsProviderErrors(t *testing.T) {
 	p := &fakeProvider{err: errors.New("dial tcp: connection refused")}
 
 	var msgs []interface{}
-	srv.streamAI(func(v interface{}) { msgs = append(msgs, v) }, p, "req2", "sys", "user", "command")
+	srv.streamAI(context.Background(), func(v interface{}) { msgs = append(msgs, v) }, p, "req2", "sys", "user", "command")
 	if len(msgs) != 1 {
 		t.Fatalf("expected a single done message, got %+v", msgs)
 	}
@@ -100,7 +100,7 @@ func TestStreamAIDiagnoseHasNoCommand(t *testing.T) {
 	p := &fakeProvider{chunks: []string{"[根因] nginx 配置缺少分号\n[影响] 服务无法启动\n[修复] 补全分号后 reload"}}
 
 	var msgs []interface{}
-	srv.streamAI(func(v interface{}) { msgs = append(msgs, v) }, p, "req3", "sys", "user", "diagnose")
+	srv.streamAI(context.Background(), func(v interface{}) { msgs = append(msgs, v) }, p, "req3", "sys", "user", "diagnose")
 	done := msgs[len(msgs)-1].(aiDoneMsg)
 	if done.Command != "" {
 		t.Fatalf("diagnose must not yield a command, got %q", done.Command)
@@ -181,5 +181,49 @@ func TestHandleAIAskRequiresProviderAndPrompt(t *testing.T) {
 	srv := newTestServer(nil)
 	if _, err := srv.handleAIAsk(nil, []byte(`{"prompt":"ls"}`)); err == nil {
 		t.Fatal("without a configured provider the call must fail loudly")
+	}
+}
+
+// TestStreamAICancelIsReported covers the Esc key: the parent context is killed,
+// the stream stops, and the card is told the reply was abandoned rather than
+// receiving a half answer as if it were complete.
+func TestStreamAICancelIsReported(t *testing.T) {
+	srv := newTestServer(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already abandoned before the first delta
+
+	p := &fakeProvider{chunks: []string{"[结论] 半句话"}}
+	var msgs []interface{}
+	srv.streamAI(ctx, func(v interface{}) { msgs = append(msgs, v) }, p, "req4", "sys", "user", "result")
+
+	if len(msgs) == 0 {
+		t.Fatal("a cancelled request must still close the card")
+	}
+	done := msgs[len(msgs)-1].(aiDoneMsg)
+	if !done.Cancelled || done.OK {
+		t.Fatalf("expected a cancelled result, got %+v", done)
+	}
+}
+
+// TestHandleAICancelReachesTheRegistry checks the RPC side: the stored cancel func
+// is called once and consumed, so Esc cannot be replayed against a finished turn.
+func TestHandleAICancelReachesTheRegistry(t *testing.T) {
+	srv := newTestServer(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.aiCancels["req-x"] = cancel
+
+	if _, err := srv.handleAICancel(nil, []byte(`{"requestId":"req-x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("the cancel func must reach the in-flight request")
+	}
+	srv.aiMu.Lock()
+	_, still := srv.aiCancels["req-x"]
+	srv.aiMu.Unlock()
+	if still {
+		t.Fatal("the request should be dropped from the registry")
 	}
 }

@@ -263,6 +263,49 @@ func TestSnifferCaptureEmitsOnPrompt(t *testing.T) {
 
 // TestSnifferCaptureFlushedByNextCommand keeps two commands' output from landing
 // in the same card.
+// TestSnifferCaptureReportsStreaming covers long-running commands: once output has
+// kept arriving past captureStreaming without going quiet, the sniffer announces a
+// stream (so the card can offer Ctrl+C) exactly once, and the command's output
+// still lands in its final segment.
+func TestSnifferCaptureReportsStreaming(t *testing.T) {
+	old := captureStreaming
+	captureStreaming = 20 * time.Millisecond
+	defer func() { captureStreaming = old }()
+
+	sk := &sink{}
+	s := newSniffer("s1")
+
+	s.armCapture("r5", "ping 223.5.5.5", sk.push)
+	// Keep the capture busy so it never goes quiet: a bare ping streams forever.
+	for i := 0; i < 6; i++ {
+		s.feed([]byte("64 bytes from 223.5.5.5: icmp_seq=1 ttl=117 time=12.7 ms\n"), sk.push)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	got := sk.await(t, 1, time.Second)
+	m, ok := got[0].(terminalStreamingMsg)
+	if !ok {
+		t.Fatalf("expected a streaming notice, got %+v", got[0])
+	}
+	if m.TrackID != "r5" || m.SessionID != "s1" || m.Command != "ping 223.5.5.5" {
+		t.Fatalf("streaming notice lost its metadata: %+v", m)
+	}
+
+	// Stopping the command (Ctrl+C) silences it, which closes the segment normally.
+	s.finishCapture(sk.push)
+	all := sk.snapshot()
+	if len(all) != 2 {
+		t.Fatalf("expected the stream notice plus one segment, got %+v", all)
+	}
+	out, ok := all[1].(terminalOutputMsg)
+	if !ok || out.TrackID != "r5" || out.TimedOut {
+		t.Fatalf("unexpected final segment: %+v", all[1])
+	}
+	if !strings.Contains(out.Text, "icmp_seq=1") {
+		t.Fatalf("the streamed output should still be captured: %q", out.Text)
+	}
+}
+
 func TestSnifferCaptureFlushedByNextCommand(t *testing.T) {
 	sk := &sink{}
 	s := newSniffer("s1")

@@ -22,6 +22,9 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
     // submitting it unchanged still attributes the command's output back to that
     // card. Editing the text drops the link.
     const [origin, setOrigin] = useState(null); // { cardId, text }
+    // The AI turn currently streaming, if any. Esc abandons it whether or not this
+    // keystroke also runs the result, so a slow model can always be given up on.
+    const activeReqRef = useRef(null);
     const inputRef = useRef(null);
     const disposedRef = useRef(false);
 
@@ -32,6 +35,11 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
     const natural = useMemo(() => looksLikeNaturalLanguage(value, risk), [value, risk]);
     const level = risk?.level || "safe";
     const aiReady = !!app.aiStatus?.configured;
+    // Whether a command is still running on this tab: Esc then means "interrupt
+    // the terminal" rather than "clear the box".
+    const running = (app.reason || []).some(
+        (r) => r.tabId === tabId && (r.exec?.status === "running" || r.exec?.status === "streaming"),
+    );
 
     // route is the single place that decides which track the current text takes,
     // so the hint line and the Enter handler can never disagree about it. Note
@@ -132,6 +140,15 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
             if (!disposedRef.current) setNote(e.message || String(e));
             return null;
         });
+        // Remember the in-flight request (and forget it when its turn ends), so Esc
+        // can abandon a generation that is taking too long.
+        pending.then((req) => {
+            if (!req || disposedRef.current) return null;
+            activeReqRef.current = req.requestId;
+            return waitForAI(req.requestId).then(() => {
+                if (activeReqRef.current === req.requestId) activeReqRef.current = null;
+            });
+        });
         if (!run) return;
 
         setBusy(true);
@@ -190,6 +207,27 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
             return;
         }
         if (e.key === "Escape") {
+            // Esc is the single "make it stop" key, in priority order: abandon the
+            // model, then interrupt a command that will not end on its own, and only
+            // then clear the box.
+            const rid = activeReqRef.current;
+            if (rid) {
+                app.cancelAI(rid);
+                activeReqRef.current = null;
+                setBusy(false);
+                setNote("已中断 AI 生成");
+                return;
+            }
+            if (busy) {
+                setBusy(false);
+                setNote("已中断 AI 生成");
+                return;
+            }
+            if (running && value.trim() === "") {
+                app.interruptTab(tabId);
+                setNote("已向终端发送 Ctrl+C");
+                return;
+            }
             setValue("");
             setRisk(null);
             setOrigin(null);
@@ -239,13 +277,17 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
                 <span className={"si-lock level-" + level} title="本地 AST 安全引擎">
                     {level === "safe" ? "🔒 AST" : level === "caution" ? "⚠ AST" : "⛔ AST"}
                 </span>
-                {busy && <span className="spinner small" />}
+                {busy && (
+                    <span className="si-thinking" title="按 Esc 中断">
+                        <span className="spinner small" /> 流式思考中…
+                    </span>
+                )}
             </div>
 
             {/* The status line is always present, even when it is empty. The
                 terminal above is sized in pixels, so a line that came and went
                 would reflow it on every keystroke. */}
-            <StatusLine value={value} risk={risk} level={level} route={route} aiReady={aiReady} note={note} />
+            <StatusLine value={value} risk={risk} level={level} route={route} aiReady={aiReady} note={note} running={running} />
         </div>
     );
 }
@@ -253,11 +295,16 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
 // StatusLine is the single fixed-height line under the input. It states what will
 // happen to what is typed — which track reads it, and how the local engine
 // classifies it — or shows the keyboard hint when the box is empty.
-function StatusLine({ value, risk, level, route, aiReady, note }) {
+function StatusLine({ value, risk, level, route, aiReady, note, running }) {
     if (note) {
         return <div className="si-status err">{note}</div>;
     }
     if (value.trim() === "") {
+        if (running) {
+            // A command is still producing output: the useful key is Esc, not
+            // another command.
+            return <div className="si-status level-caution">命令运行中 · Esc 发送 Ctrl+C 停止</div>;
+        }
         return (
             <div className="si-status idle">
                 {aiReady ? "Tab 填入最新 AI 指令 · Ctrl+Enter 直接执行" : "Enter 执行命令"}

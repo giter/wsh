@@ -310,6 +310,7 @@ if (field) {
                 { label: "要点", detail: "wglink 占用 0.7% CPU" },
                 { label: "风险", detail: "1080/1081 端口疑似代理服务，需确认" },
             ],
+            suggestions: [{ label: "路由追踪", command: "traceroute 223.5.5.5" }],
         }),
     });
     await tick();
@@ -324,6 +325,82 @@ if (field) {
     report("the card header advertises the warning", badge.some((t) => t.includes("有风险提示")), badge.join(" | "));
     const narration = [...document.querySelectorAll(".rc-step.tone-narration")].length;
     report("narration is rendered recessively", narration > 0, `${narration} narration step(s)`);
+
+    // Folding: once the conversation has moved on, older turns shrink to a
+    // one-line recap so a long investigation stays scannable.
+    const folded = document.querySelector(".reason-card.ask .rc-summary");
+    report("an older turn folds to one line", !!folded, folded ? JSON.stringify(folded.textContent) : "");
+
+    // Anchor linking: the outcome offers a way back to the raw terminal output.
+    const revealBtn = [...document.querySelectorAll(".rc-execrow button")].find((b) =>
+        b.textContent.includes("查看原始输出"),
+    );
+    report("the card links back to its raw output", !!revealBtn);
+
+    // Quick follow-up: one click is the whole gesture — the chip records the
+    // question and runs the recommended command without touching the input box.
+    const chip = [...document.querySelectorAll(".rc-followups button")].find((b) => b.textContent.includes("路由追踪"));
+    report("the analysis offers follow-up chips", !!chip);
+    if (chip) {
+        const beforeChip = lastSocket.sent.filter((r) => r.method === "terminal.exec").length;
+        chip.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        await tick();
+        const asked = [...document.querySelectorAll(".reason-card.ask .rc-title")].some(
+            (t) => t.textContent === "快捷追问",
+        );
+        report("the chip becomes the user's next turn", asked);
+        const afterChip = lastSocket.sent.filter((r) => r.method === "terminal.exec");
+        report("the chip runs its command in one click", afterChip.length === beforeChip + 1, `terminal.exec × ${afterChip.length}`);
+    }
+
+    // A command that will not end on its own is called out as a stream, and the
+    // card offers the only useful key there: Ctrl+C.
+    const streamTrack = lastSocket.sent.filter((r) => r.method === "terminal.exec").pop()?.params?.trackId;
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "terminal.streaming",
+            sessionId: "sess-1",
+            trackId: streamTrack,
+            command: "traceroute 223.5.5.5",
+            elapsedMs: 3200,
+        }),
+    });
+    await tick();
+    const streamRow = document.querySelector(".rc-exec.streaming");
+    report(
+        "a long-running command is labelled as streaming",
+        !!streamRow && streamRow.textContent.includes("持续监听中"),
+        streamRow ? streamRow.textContent : "",
+    );
+    const stopBtn = [...document.querySelectorAll(".rc-exec.streaming button")].find((b) => b.textContent.includes("停止"));
+    report("the stream offers a stop button", !!stopBtn);
+    if (stopBtn) {
+        const beforeInput = lastSocket.sent.filter((r) => r.method === "terminal.input").length;
+        stopBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        await tick();
+        const inputs = lastSocket.sent.filter((r) => r.method === "terminal.input");
+        report(
+            "stopping sends Ctrl+C to the PTY",
+            inputs.length === beforeInput + 1 && inputs[inputs.length - 1].params.data === "\u0003",
+            JSON.stringify(inputs[inputs.length - 1]?.params),
+        );
+    }
+
+    // Esc is the single "stop it" key: it abandons a generation that is taking too
+    // long instead of leaving the box waiting.
+    setValue(field, "系统负载");
+    await tick();
+    field.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const cancelReq = [...lastSocket.replies].reverse().find((r) => r.method === "ai.ask")?.data?.requestId;
+    field.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const cancelCall = lastSocket.sent.filter((r) => r.method === "ai.cancel").pop();
+    report("Esc abandons the in-flight generation", cancelCall?.params?.requestId === cancelReq, JSON.stringify(cancelCall?.params));
 }
 
 if (errors.length) {

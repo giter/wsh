@@ -115,6 +115,13 @@ const (
 	captureLimit = 32 << 10
 )
 
+// captureStreaming is how long a command may keep producing output before it is
+// called out as a long-running stream. A `ping` without `-c` would otherwise sit
+// silently until the 30s timeout; this tells the UI earlier, so it can offer to
+// stop the command instead of leaving a bare spinner. It is a var (not a const)
+// purely so tests can shorten it.
+var captureStreaming = 3 * time.Second
+
 // execCapture accumulates the output of one tracked command.
 type execCapture struct {
 	seq     int
@@ -128,8 +135,12 @@ type execCapture struct {
 	grace    bool
 	trunc    bool
 	finished bool
-	timer    *time.Timer
-	hard     *time.Timer
+	// streaming records that the long-running notice was already sent, so it is
+	// pushed once per command and not on every chunk.
+	streaming bool
+	timer     *time.Timer
+	hard      *time.Timer
+	stream    *time.Timer
 }
 
 // armCapture starts recording output for the card identified by trackID. A capture
@@ -152,6 +163,7 @@ func (s *sniffer) armCapture(trackID, command string, push func(interface{})) {
 	s.cap = c
 	c.timer = time.AfterFunc(captureQuiet, func() { s.captureIdle(c.seq, push) })
 	c.hard = time.AfterFunc(captureTimeout, func() { s.captureOverran(c.seq, push) })
+	c.stream = time.AfterFunc(captureStreaming, func() { s.captureStillRunning(c.seq, push) })
 }
 
 // finishCapture flushes the active capture, if any.
@@ -223,6 +235,27 @@ func (s *sniffer) captureIdle(seq int, push func(interface{})) {
 	s.finishCaptureLocked(push, false)
 }
 
+// captureStillRunning fires when a tracked command has been producing output for
+// longer than captureStreaming without going quiet. It reports the stream so the
+// card can offer "stop listening (Ctrl+C)" instead of showing a spinner that
+// looks stuck; the capture itself stays open and keeps accumulating.
+func (s *sniffer) captureStillRunning(seq int, push func(interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.cap
+	if c == nil || c.seq != seq || c.finished || c.streaming {
+		return
+	}
+	c.streaming = true
+	push(terminalStreamingMsg{
+		Type:      "terminal.streaming",
+		SessionID: s.sessionID,
+		TrackID:   c.trackID,
+		Command:   c.command,
+		ElapsedMs: time.Since(c.start).Milliseconds(),
+	})
+}
+
 // captureOverran ends a segment that never went quiet.
 func (s *sniffer) captureOverran(seq int, push func(interface{})) {
 	s.mu.Lock()
@@ -247,6 +280,9 @@ func (s *sniffer) finishCaptureLocked(push func(interface{}), timedOut bool) {
 	}
 	if c.hard != nil {
 		c.hard.Stop()
+	}
+	if c.stream != nil {
+		c.stream.Stop()
 	}
 	if c.finished || push == nil {
 		return
@@ -484,4 +520,16 @@ type terminalOutputMsg struct {
 	DurationMs int64  `json:"durationMs"`
 	Truncated  bool   `json:"truncated"`
 	TimedOut   bool   `json:"timedOut"`
+}
+
+// terminalStreamingMsg announces that a tracked command is still producing output
+// well after it started (a stream: `tail -f`, a bare `ping`, `top`). It is
+// advisory: the capture keeps running, and the final segment still arrives as a
+// terminalOutputMsg.
+type terminalStreamingMsg struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId"`
+	TrackID   string `json:"trackId"`
+	Command   string `json:"command"`
+	ElapsedMs int64  `json:"elapsedMs"`
 }

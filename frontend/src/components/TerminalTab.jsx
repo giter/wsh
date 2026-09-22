@@ -174,6 +174,98 @@ export default function TerminalTab({ tab, active }) {
             if (s) rpc.call("terminal.input", { sessionId: s, data }).catch(() => {});
         });
 
+        // ---- Anchors: the pane's link back to the raw output ----
+        //
+        // xterm is the only component that knows where a command was rendered, so
+        // it exposes a small bridge: pin a marker on the line a tracked command is
+        // about to be echoed on, then scroll to it or tint it when the reasoning
+        // pane asks. Markers survive scrolling and are disposed when their line
+        // falls out of the scrollback, which is exactly the "cannot locate it any
+        // more" case the pane has to be able to report.
+        const anchors = new Map(); // cardId -> { marker, deco }
+        let flashTimer = null;
+
+        const highlightColor = () => (appRef.current?.settings?.theme === "light" ? "#dbeafe" : "#2f3550");
+        const bandHeight = (lines) => Math.max(1, Math.min(2000, Math.round(lines || 1)));
+
+        const clearDeco = (a) => {
+            if (a && a.deco) {
+                a.deco.dispose();
+                a.deco = null;
+            }
+        };
+        const showDeco = (a, lines) => {
+            if (!a || a.deco) return;
+            try {
+                a.deco = term.registerDecoration({
+                    marker: a.marker,
+                    width: term.cols,
+                    height: bandHeight(lines),
+                    backgroundColor: highlightColor(),
+                    layer: "bottom",
+                }) || null;
+            } catch {
+                a.deco = null;
+            }
+        };
+        const dropAnchor = (cardId) => {
+            const a = anchors.get(cardId);
+            if (!a) return;
+            clearDeco(a);
+            try {
+                a.marker.dispose();
+            } catch {
+                /* already gone */
+            }
+            anchors.delete(cardId);
+        };
+        // live returns the anchor for a card, or null when its line is no longer
+        // addressable (trimmed out of the buffer, or the terminal was reset).
+        const live = (cardId) => {
+            const a = anchors.get(cardId);
+            if (!a || a.marker.isDisposed || a.marker.line < 0) return null;
+            return a;
+        };
+
+        app.registerTerminal(tab.id, {
+            markAnchor(cardId) {
+                if (!cardId || disposed) return;
+                dropAnchor(cardId);
+                let marker = null;
+                try {
+                    marker = term.registerMarker(0);
+                } catch {
+                    marker = null;
+                }
+                if (marker) anchors.set(cardId, { marker, deco: null });
+            },
+            dropAnchor,
+            reveal(cardId, lines) {
+                const a = live(cardId);
+                if (!a) return false;
+                try {
+                    term.scrollToLine(a.marker.line);
+                } catch {
+                    return false;
+                }
+                showDeco(a, lines);
+                clearTimeout(flashTimer);
+                flashTimer = setTimeout(() => clearDeco(a), 1200);
+                return true;
+            },
+            hover(cardId, lines, on) {
+                const a = live(cardId);
+                if (!a) return false;
+                try {
+                    if (on) showDeco(a, lines);
+                    else clearDeco(a);
+                } catch {
+                    return false;
+                }
+                return true;
+            },
+        });
+
         let opened = false;
         // user carries a username typed at the login prompt, used when the saved
         // connection has none. It applies to this login only.
@@ -265,6 +357,10 @@ export default function TerminalTab({ tab, active }) {
 
         return () => {
             disposed = true;
+            clearTimeout(flashTimer);
+            anchors.forEach((a) => clearDeco(a));
+            anchors.clear();
+            app.registerTerminal(tab.id, null);
             const s = sessionRef.current;
             if (s && !exitedRef.current) rpc.call("terminal.close", { sessionId: s }).catch(() => {});
             app.registerSession(tab.id, null);

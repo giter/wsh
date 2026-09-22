@@ -527,6 +527,10 @@ button.btn.primary:hover { background: var(--accent-2); }
 button.btn.danger { border-color: rgba(244,63,94,.4); color: var(--danger); }
 button.btn.danger:hover { background: rgba(244,63,94,.12); }
 button.btn.small { padding: 3px 8px; font-size: 12px; }
+/* A low-key action that sits next to text rather than standing out as a primary
+   button ("查看原始输出"). */
+button.btn.ghost { background: transparent; border-color: transparent; color: var(--dim); }
+button.btn.ghost:hover { background: var(--panel-hi); color: var(--text); }
 button.btn:disabled { opacity: .5; cursor: not-allowed; }
 button.icon-btn {
   background: transparent; border: none; color: var(--dim); cursor: pointer;
@@ -913,6 +917,17 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 /* Shown while the reply streams, so the raw text below is not mistaken for the
    final answer. */
 .rc-thinking { font-size: 11px; color: var(--dim); }
+/* A folded card's one-line recap. It has to carry the outcome on its own, since
+   everything else on the card is hidden while it is folded. */
+.rc-summary {
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.6;
+  padding-left: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* The parsed steps are the readable form of the reply; the raw text stays
    available behind this toggle so nothing the model said is lost. */
 .rc-raw { margin-top: 6px; }
@@ -979,7 +994,13 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 }
 .rc-exec.done { color: var(--accent); }
 .rc-exec.caution { color: var(--warn); }
+.rc-exec.streaming { color: var(--warn); }
 .rc-exec.blocked { color: var(--danger); }
+/* The execution row pairs the status with its "查看原始输出" action, so the link
+   back to the terminal sits with the result it belongs to. */
+.rc-execrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.rc-execrow .rc-exec { margin-top: 0; min-width: 0; }
+.rc-execrow button.btn { flex: 0 0 auto; }
 
 /* Result analysis: the model's reading of the output, on the same card. */
 .rc-analysis {
@@ -1043,6 +1064,9 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 #smart-input.level-blocked .si-field { border-color: var(--danger); background: rgba(244, 63, 94, .08); }
 .si-mode { flex: 0 0 auto; width: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--dim); padding: 4px 6px; }
 .si-lock { font-size: 11px; color: var(--faint); white-space: nowrap; }
+/* The streaming indicator: it sits in the flex row, so it must not claim the
+   whole toolbar the way the shared input rule would. */
+.si-thinking { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--blue); white-space: nowrap; flex: 0 0 auto; }
 .si-lock.level-safe { color: var(--accent); }
 .si-lock.level-caution { color: var(--warn); }
 .si-lock.level-blocked { color: var(--danger); }

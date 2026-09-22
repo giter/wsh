@@ -281,8 +281,8 @@ func MaskBytes(b []byte) []byte
 
 | 文件 | 作用 |
 | --- | --- |
-| `components/SmartInput.jsx` | 纯输入框（不再预览命令）+ 风险高亮 + 透传模式；解析模式为「自动判别 / 仅当命令 / 仅交给 AI」，只决定输入怎么理解；Tab 填入最新 AI 指令，Ctrl+Enter 一键执行；状态行常驻占位并说明当前输入的走向，避免终端重排 |
-| `components/ReasonPane.jsx` | 对话承载区：用户提问卡（`ask`）/ CoT / RCA / 影子推演 / 阻断提示；命令卡片带「填入/立即执行」、执行状态、原地结果分析与快捷追问 |
+| `components/SmartInput.jsx` | 纯输入框（不再预览命令）+ 风险高亮 + 透传模式；解析模式为「自动判别 / 仅当命令 / 仅交给 AI」，只决定输入怎么理解；Tab 填入最新 AI 指令，Ctrl+Enter 一键执行；生成中显示「流式思考中…」，Esc 依次打断 AI 生成 / 给终端发 Ctrl+C；状态行常驻占位并说明当前输入的走向，避免终端重排 |
+| `components/ReasonPane.jsx` | 对话承载区：用户提问卡（`ask`）/ CoT / RCA / 影子推演 / 阻断提示；命令卡片带「填入/立即执行」、执行状态、原地结果分析与快捷追问；旧卡片自动折叠为一行摘要（最新 / 刚更新 / 执行中的卡片保持展开），悬停或点「查看原始输出」联动终端定位 |
 | `lib/intent.js` | Shell vs 自然语言判据 + 风险/严重度标签 |
 | `state/store.jsx` | 推理卡片、AI 请求关联（含卡片内嵌字段）、统一执行入口、命令输出绑定、提问卡、主机采样 |
 | `App.jsx` `TerminalTab.jsx` `Sidebar.jsx` `SettingsPage.jsx` `ConnectionDialog.jsx` `styles.css` | 三栏布局、推送订阅、AI 设置、跳板机选择、仪表盘 |
@@ -296,12 +296,17 @@ func MaskBytes(b []byte) []byte
 | `terminal.exec` | `{sessionId, command, confirmToken, trackId}` → `{written, blocked, confirm, result}` |
 | `ai.status` | → `{configured, provider, model, autoAnalyze, noContext, name}` |
 | `ai.ask` | `{sessionId, prompt, kind, excerpt}` → `{requestId, kind}` |
+| `ai.cancel` | `{requestId}` → `{ok}`（Esc 打断一次生成，流式 goroutine 随 context 取消） |
 | `probes.snapshot` | → `map[connId]HostStats` |
 
 `ai.ask` 的 `kind` 为 `command`（自然语言→命令）、`diagnose`（报错根因）或
 `result`（解读刚执行命令的输出，返回 `suggestions` 供卡片生成快捷追问按钮）。
 
-推送：`terminal.mode`、`terminal.error`、`terminal.output`、`ai.delta`、`ai.done`、`host.stats`。
+推送：`terminal.mode`、`terminal.error`、`terminal.output`、`terminal.streaming`、`ai.delta`、`ai.done`、`host.stats`。
+
+`terminal.streaming` 在一条被跟踪的命令持续输出超过 3 秒（`captureStreaming`）时推一次，
+告诉卡片这是一条流（`tail -f`、不带 `-c` 的 `ping`），可以「停止监听 (Ctrl+C)」；
+捕获本身不结束，命令真正安静下来后仍按 `terminal.output` 交付那一段。
 
 `terminal.exec` 带 `trackId` 时，后端会把这条命令的输出片段随 `terminal.output`
 （`{trackId, command, text, durationMs, truncated, timedOut}`）推回，前端据此把输出

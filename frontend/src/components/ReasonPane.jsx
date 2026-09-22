@@ -13,6 +13,9 @@ import { riskLabel, sevLabel } from "../lib/intent.js";
 export default function ReasonPane({ tabId }) {
     const app = useApp();
     const items = app.reason.filter((r) => r.tabId === tabId);
+    // The card that most recently changed (see noteFocus in the store) is kept
+    // open alongside the newest one.
+    const focusId = app.focusByTab?.[tabId];
     const pending = app.pendingConfirm && app.pendingConfirm.tabId === tabId ? app.pendingConfirm : null;
 
     // Follow the tail while it grows (cards streaming in, analyses landing), but
@@ -69,8 +72,14 @@ export default function ReasonPane({ tabId }) {
                     </div>
                 )}
 
-                {items.map((item) => (
-                    <ReasonCard key={item.id} item={item} tabId={tabId} />
+                {items.map((item, i) => (
+                    <ReasonCard
+                        key={item.id}
+                        item={item}
+                        tabId={tabId}
+                        latest={i === items.length - 1}
+                        focused={item.id === focusId}
+                    />
                 ))}
             </div>
         </aside>
@@ -190,17 +199,55 @@ function StepList({ steps }) {
     );
 }
 
-function ReasonCard({ item, tabId }) {
-    const app = useApp();
-    // A card that carries a command stays open: the command, its two action
-    // buttons and the analysis of its output are the whole point of the card.
-    const [open, setOpen] = useState(item.kind !== "cot" || item.status === "streaming" || !!item.command);
+// cardSummary reduces a card to the single line a folded card shows. It prefers
+// the concrete outcome — what ran, how it ended, the conclusion the model drew —
+// over the title, because the title is already in the header.
+function cardSummary(item) {
+    if (item.kind === "ask") return item.text || "";
+    if (item.kind === "notice") return item.text || item.title || "";
+    if (item.kind === "error") return item.excerpt || item.title || "";
+    const exec = item.exec || {};
+    const cmd = item.command || "";
+    // Once there is an analysis, its reading is the point; before that, the
+    // generation's own steps are all there is.
+    const steps = exec.output ? item.analysis?.steps : item.steps;
+    const hit = (steps || []).find((s) => s.label === "结论" || s.label === "根因" || s.label === "要点");
+    const note = hit ? hit.detail : "";
+    const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
+    switch (exec.status) {
+        case "running":
+            return `⏳ ${cmd} · 执行中…`;
+        case "streaming":
+            return `🟡 ${cmd} · 持续监听中`;
+        case "timeout":
+            return `🟡 ${cmd} · 已截取前 ${secs}s 输出`;
+        case "blocked":
+            return `⛔ ${cmd} · 已阻断`;
+        case "confirm":
+            return `⚠ ${cmd} · 待确认`;
+        case "error":
+            return `⚠ ${cmd} · 执行失败`;
+        case "done":
+            return `🟢 ${cmd} · ${secs}s${note ? " — " + note : ""}`;
+        default:
+            return `🤖 ${cmd || item.title || "AI 推理"}${note ? " — " + note : ""}`;
+    }
+}
 
-    // The loop must be visible: when the command runs or its analysis arrives,
-    // reveal the card even if the user had collapsed it.
-    useEffect(() => {
-        if (item.exec || item.analysis) setOpen(true);
-    }, [item.exec, item.analysis]);
+function ReasonCard({ item, tabId, latest, focused }) {
+    const app = useApp();
+    // A card folds to a single summary line once the conversation moves on, so a
+    // ten-step investigation stays scannable. Three cards stay open: the newest,
+    // the one that just changed, and any with work still in flight. Clicking the
+    // header overrides that, and the choice sticks.
+    const foldable = item.kind === "ask" || item.kind === "cot";
+    const streaming = item.status === "streaming";
+    const execRunning = item.exec?.status === "running" || item.exec?.status === "streaming";
+    const analysisStreaming = item.analysis?.status === "streaming";
+    const auto = !!latest || !!focused || streaming || execRunning || analysisStreaming;
+    const [manual, setManual] = useState(null);
+    const open = foldable ? (manual === null ? auto : manual) : true;
+    const toggle = () => setManual(!open);
 
     // fill drops a command into the Smart Input. The card id travels with it so
     // the command's output can still be attributed back here.
@@ -224,14 +271,16 @@ function ReasonCard({ item, tabId }) {
 
     if (item.kind === "ask") {
         // The user's own turn in the conversation: without it the pane only shows
-        // answers, and there is no way to tell what was asked.
+        // answers, and there is no way to tell what was asked. It folds like any
+        // other card once the answer has pushed it up the thread.
         return (
             <div className="reason-card ask">
-                <div className="rc-head">
+                <div className="rc-head clickable" onClick={toggle}>
+                    <span className="caret">{open ? "▾" : "▸"}</span>
                     <span className="rc-ask-mark">💬</span>
                     <span className="rc-title">{item.title || "我的提问"}</span>
                 </div>
-                <div className="rc-ask-text">{item.text}</div>
+                {open ? <div className="rc-ask-text">{item.text}</div> : <div className="rc-summary">{item.text}</div>}
             </div>
         );
     }
@@ -257,24 +306,26 @@ function ReasonCard({ item, tabId }) {
 
     // CoT card.
     const steps = item.steps || [];
-    const streaming = item.status === "streaming";
     // The model's raw reply is the thinking process: it is what streams in. Once
     // the reply is parsed into steps, the steps are the readable form, so the raw
     // text is kept behind a toggle rather than thrown away.
     const raw = (item.text || "").trim();
     // Either the generation or its result analysis can raise the warning, and the
-    // card is often collapsed, so the header has to carry it.
+    // card is often folded, so the header has to carry it.
     const warn = hasWarning(steps) || hasWarning(item.analysis?.steps);
     return (
         <div className={"reason-card cot " + (item.status || "")}>
-            <div className="rc-head clickable" onClick={() => setOpen((v) => !v)}>
+            <div className="rc-head clickable" onClick={toggle}>
                 <span className="caret">{open ? "▾" : "▸"}</span>
                 <span className="rc-title">{item.title}</span>
                 {streaming && <span className="spinner small" />}
                 {streaming && <span className="rc-thinking">思考中…</span>}
+                {item.status === "cancelled" && <span className="rc-thinking">已取消</span>}
                 {warn && <span className="risk-pill level-caution">⚠ 有风险提示</span>}
                 {item.status === "error" && <span className="risk-pill level-blocked">失败</span>}
             </div>
+
+            {!open && <div className="rc-summary">{cardSummary(item)}</div>}
 
             {open && (
                 <>
@@ -305,9 +356,17 @@ function ReasonCard({ item, tabId }) {
 function GeneratedCommand({ item, tabId, fill }) {
     const app = useApp();
     const [note, setNote] = useState("");
+    const [revealNote, setRevealNote] = useState("");
     const exec = item.exec || {};
     const analysis = item.analysis;
     const running = exec.status === "running";
+
+    // anchored means there is captured output and a marker in the terminal to
+    // point at, so hover/reveal have something to do. The line count is the
+    // command's echo plus its output, which is what gets highlighted.
+    const output = exec.output || "";
+    const lines = output ? output.split("\n").length + 1 : 0;
+    const anchored = !!output && (exec.status === "done" || exec.status === "timeout" || exec.status === "streaming");
 
     const run = async () => {
         if (running) return;
@@ -326,8 +385,21 @@ function GeneratedCommand({ item, tabId, fill }) {
         }
     };
 
+    const reveal = () => {
+        setRevealNote("");
+        if (!app.revealOutput(tabId, item.id, lines)) {
+            setRevealNote("这段输出已流出终端缓冲区，无法定位");
+        }
+    };
+
     return (
-        <div className="rc-generated" tabIndex={0} onKeyDown={onKeyDown}>
+        <div
+            className="rc-generated"
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            onMouseEnter={() => anchored && app.hoverOutput(tabId, item.id, lines, true)}
+            onMouseLeave={() => anchored && app.hoverOutput(tabId, item.id, lines, false)}
+        >
             <div className="rc-generated-head">
                 <span>生成指令</span>
                 <span className={"risk-pill level-" + (item.risk?.level || "safe")}>
@@ -343,27 +415,53 @@ function GeneratedCommand({ item, tabId, fill }) {
                     {running ? "执行中…" : "🚀 立即执行 (Ctrl+↵)"}
                 </button>
             </div>
-            <ExecStatus exec={exec} />
+            <div className="rc-execrow">
+                <ExecStatus exec={exec} onStop={() => app.interruptTab(tabId)} />
+                {anchored && (
+                    <button className="btn small ghost" onClick={reveal} title="滚动终端并高亮这条命令的输出">
+                        查看原始输出
+                    </button>
+                )}
+            </div>
+            {revealNote && <div className="rc-note err">{revealNote}</div>}
             {note && <div className="rc-note err">{note}</div>}
             {analysis && <ResultAnalysis analysis={analysis} tabId={tabId} />}
         </div>
     );
 }
 
-// ExecStatus reports what happened to the command the card proposed.
-function ExecStatus({ exec }) {
+// ExecStatus reports what happened to the command the card proposed. onStop lets
+// the user end a command that will not end on its own, which is the whole point
+// of recognising a stream: a bare spinner gives no way out.
+function ExecStatus({ exec, onStop }) {
     const status = exec?.status;
     if (!status || status === "idle") return null;
     // A command that ran on its own says so: the user must never wonder why the
     // terminal moved without them pressing anything.
     const auto = !!exec.auto;
+    const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
+    const stop = onStop ? (
+        <button className="btn small" onClick={onStop} title="向终端发送 Ctrl+C">
+            停止 (Ctrl+C)
+        </button>
+    ) : null;
     switch (status) {
         case "running":
             return (
                 <div className="rc-exec running">
                     <span className="spinner small" /> {auto ? "绿区命令已自动执行，等待输出…" : "已下发，等待输出…"}
+                    {stop}
                 </div>
             );
+        case "streaming": {
+            const el = ((exec.elapsedMs || 0) / 1000).toFixed(1);
+            return (
+                <div className="rc-exec streaming">
+                    <span className="spinner small" /> 🟡 持续监听中 (Streaming…) · {el}s
+                    {stop}
+                </div>
+            );
+        }
         case "blocked":
             return <div className="rc-exec blocked">⛔ 已被本地安全引擎阻断{exec.reason ? "：" + exec.reason : ""}</div>;
         case "confirm":
@@ -371,12 +469,12 @@ function ExecStatus({ exec }) {
         case "error":
             return <div className="rc-exec blocked">执行失败{exec.reason ? "：" + exec.reason : ""}</div>;
         default: {
-            const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
             const tail = exec.truncated ? "（输出过长，已截断）" : "";
             if (status === "timeout") {
                 return (
                     <div className="rc-exec caution">
                         🟡 命令仍在运行，已截取前 {secs}s 输出{tail}
+                        {stop}
                     </div>
                 );
             }
@@ -400,7 +498,10 @@ function ResultAnalysis({ analysis, tabId }) {
     const streaming = analysis.status === "streaming";
 
     const runSuggestion = (s) => {
-        app.runSuggestion({ tabId, command: s.command, title: s.label || "下一步排查" });
+        // One click is the whole gesture: the chip's label becomes the user's turn,
+        // then the recommended command runs through the same gate. The input box is
+        // never involved.
+        app.askFollowUp({ tabId, command: s.command, label: s.label || "下一步排查" });
     };
 
     return (
