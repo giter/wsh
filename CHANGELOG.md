@@ -31,5 +31,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   macOS
 - Windows (.exe via mingw cross-compile), macOS (.app / .dmg) and Linux builds
 
-[Unreleased]: https://github.com/lijiajie/wsh/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/lijiajie/wsh/releases/tag/v1.0.0
+[Unreleased]: https://github.com/giter/wsh/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/giter/wsh/releases/tag/v1.0.0

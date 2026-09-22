@@ -1,4 +1,4 @@
-module github.com/lijiajie/wsh
+module github.com/giter/wsh
 
 go 1.27.1
 

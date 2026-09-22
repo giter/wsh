@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 
-	"github.com/lijiajie/wsh/storage"
+	"github.com/giter/wsh/storage"
 )
 
 func (s *Server) handleGetSettings(c *wsClient, params json.RawMessage) (interface{}, error) {

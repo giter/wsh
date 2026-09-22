@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
+	sshclient "github.com/giter/wsh/ssh"
 )
 
 // TestDialAdhoc covers the dialing used by the quick-connect bar: an unsaved

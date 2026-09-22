@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 // keyView is the managed-key shape sent to the browser. It carries only the

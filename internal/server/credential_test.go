@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
+	sshclient "github.com/giter/wsh/ssh"
 )
 
 // TestCredentialPrompt covers the mapping from a dial failure to the credential

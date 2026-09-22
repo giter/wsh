@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 // WebSession wires a browser terminal tab to a live SSH shell. Unlike the

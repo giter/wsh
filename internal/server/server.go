@@ -12,8 +12,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 // Server is the HTTP/WebSocket backend that bridges the web frontend with the

@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/lijiajie/wsh/storage"
+	"github.com/giter/wsh/storage"
 )
 
 // TestCleanJumpHosts covers the validation applied to a submitted bastion chain.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lijiajie/wsh/storage"
+	"github.com/giter/wsh/storage"
 )
 
 // lookup builds a resolver over a fixed set of connections.

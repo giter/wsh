@@ -3,7 +3,7 @@ package ssh
 import (
 	"sync"
 
-	"github.com/lijiajie/wsh/storage"
+	"github.com/giter/wsh/storage"
 )
 
 // TunnelManager owns the lifecycle of active tunnels keyed by tunnel ID.

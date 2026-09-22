@@ -7,8 +7,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 // connView is the connection shape sent to the browser. It never carries the

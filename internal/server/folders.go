@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lijiajie/wsh/storage"
+	"github.com/giter/wsh/storage"
 )
 
 // folderView is the folder shape sent to the browser.

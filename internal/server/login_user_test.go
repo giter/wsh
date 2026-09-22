@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 // storeWithConnection writes a one-connection config file and loads it, so the

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	sshclient "github.com/lijiajie/wsh/ssh"
-	"github.com/lijiajie/wsh/storage"
+	sshclient "github.com/giter/wsh/ssh"
+	"github.com/giter/wsh/storage"
 )
 
 func newTestServer(web fs.FS) *Server {
