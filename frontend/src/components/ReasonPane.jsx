@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { riskLabel, sevLabel } from "../lib/intent.js";
 
@@ -15,6 +15,24 @@ export default function ReasonPane({ tabId }) {
     const items = app.reason.filter((r) => r.tabId === tabId);
     const pending = app.pendingConfirm && app.pendingConfirm.tabId === tabId ? app.pendingConfirm : null;
 
+    // Follow the tail while it grows (cards streaming in, analyses landing), but
+    // stop the moment the user scrolls up: yanking the view back down while they
+    // are reading is worse than missing the newest line.
+    const bodyRef = useRef(null);
+    const stick = useRef(true);
+
+    const onScroll = () => {
+        const el = bodyRef.current;
+        if (!el) return;
+        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    };
+
+    useEffect(() => {
+        const el = bodyRef.current;
+        if (!el || !stick.current) return;
+        el.scrollTop = el.scrollHeight;
+    }, [items, pending]);
+
     return (
         <aside id="reason-pane">
             <div id="reason-header">
@@ -26,12 +44,12 @@ export default function ReasonPane({ tabId }) {
                         🗑
                     </button>
                 )}
-                <button className="icon-btn" title="收起" onClick={() => app.toggleReason()}>
+                <button className="icon-btn" title="收起（Ctrl+Shift+A 可重新打开）" onClick={() => app.toggleReason()}>
                     ✕
                 </button>
             </div>
 
-            <div id="reason-body">
+            <div id="reason-body" ref={bodyRef} onScroll={onScroll}>
                 {!app.aiStatus?.configured && !pending && (
                     <div className="reason-empty">
                         <div>
@@ -87,6 +105,75 @@ function DryRunCard({ pending }) {
                 </button>
             </div>
         </div>
+    );
+}
+
+// stepTone maps a reasoning label to its visual weight. The model narrates its
+// process ([意图分析]/[策略选择]/[安全判定]) and states findings ([结论]/[要点])
+// and warnings ([风险]) in the same flat list, so without this the pane reads as
+// a wall of equally important text and the one line that matters is lost in it.
+function stepTone(label) {
+    switch (label) {
+        case "风险":
+            return "risk";
+        // Separate case labels, not `case "结论", "根因":` — the comma there is the
+        // comma operator, which would only ever compare against the last value.
+        case "结论":
+        case "根因":
+            return "conclusion";
+        case "要点":
+        case "影响":
+            return "point";
+        case "修复":
+        case "后续":
+        case "建议":
+            return "action";
+        case "生成指令":
+        case "命令":
+            return "command";
+        default:
+            // 意图分析 / 策略选择 / 安全判定 / 说明 / 状态 …
+            return "narration";
+    }
+}
+
+// hasWarning reports whether any step carries a real warning, so a collapsed card
+// can show it in its header. The prompts ask the model to write 无 when there is
+// nothing to flag, which is what makes this check meaningful.
+function hasWarning(steps) {
+    return (steps || []).some((s) => s.label === "风险" && isPresent(s.detail));
+}
+
+// nothingToFlag matches the ways a model says "there is nothing here". Kept
+// explicit rather than a loose "starts with 无" test, so a real warning such as
+// "无法确定是否为预期服务" is not swallowed by it.
+const nothingToFlag = /^(无|没有)(风险|异常|明显|问题|特殊|需特别|需额外|需人工|需处理)?$/;
+
+function isPresent(detail) {
+    const s = String(detail || "").trim();
+    if (s === "") return false;
+    if (nothingToFlag.test(s)) return false;
+    return !/^(none|n\/a|null)$/i.test(s);
+}
+
+// StepList renders the model's bracketed steps with the weight their label
+// deserves: narration recedes, findings and warnings do not.
+function StepList({ steps }) {
+    return (
+        <ol className="rc-steps">
+            {steps.map((s, i) => {
+                const tone = stepTone(s.label);
+                return (
+                    <li key={i} className={"rc-step tone-" + tone}>
+                        <span className="rc-step-label">
+                            {tone === "risk" && "⚠ "}
+                            [{s.label}]
+                        </span>
+                        <span className="rc-step-detail">{s.detail}</span>
+                    </li>
+                );
+            })}
+        </ol>
     );
 }
 
@@ -158,27 +245,37 @@ function ReasonCard({ item, tabId }) {
     // CoT card.
     const steps = item.steps || [];
     const streaming = item.status === "streaming";
+    // The model's raw reply is the thinking process: it is what streams in. Once
+    // the reply is parsed into steps, the steps are the readable form, so the raw
+    // text is kept behind a toggle rather than thrown away.
+    const raw = (item.text || "").trim();
+    // Either the generation or its result analysis can raise the warning, and the
+    // card is often collapsed, so the header has to carry it.
+    const warn = hasWarning(steps) || hasWarning(item.analysis?.steps);
     return (
         <div className={"reason-card cot " + (item.status || "")}>
             <div className="rc-head clickable" onClick={() => setOpen((v) => !v)}>
                 <span className="caret">{open ? "▾" : "▸"}</span>
                 <span className="rc-title">{item.title}</span>
                 {streaming && <span className="spinner small" />}
+                {streaming && <span className="rc-thinking">思考中…</span>}
+                {warn && <span className="risk-pill level-caution">⚠ 有风险提示</span>}
                 {item.status === "error" && <span className="risk-pill level-blocked">失败</span>}
             </div>
 
             {open && (
                 <>
                     {steps.length > 0 ? (
-                        <ol className="rc-steps">
-                            {steps.map((s, i) => (
-                                <li key={i}>
-                                    <span className="rc-step-label">[{s.label}]</span> {s.detail}
-                                </li>
-                            ))}
-                        </ol>
+                        <StepList steps={steps} />
                     ) : (
-                        <pre className="rc-stream">{item.text || (streaming ? "思考中…" : "")}</pre>
+                        <pre className="rc-stream">{raw || (streaming ? "思考中…" : "")}</pre>
+                    )}
+
+                    {steps.length > 0 && raw && (
+                        <details className="rc-raw">
+                            <summary>思考过程（模型原始回复）</summary>
+                            <pre className="rc-stream">{raw}</pre>
+                        </details>
                     )}
 
                     {item.command && <GeneratedCommand item={item} tabId={tabId} fill={fill} />}
@@ -297,13 +394,7 @@ function ResultAnalysis({ analysis, tabId }) {
                 {analysis.status === "error" && <span className="risk-pill level-blocked">失败</span>}
             </div>
             {steps.length > 0 ? (
-                <ol className="rc-steps">
-                    {steps.map((s, i) => (
-                        <li key={i}>
-                            <span className="rc-step-label">[{s.label}]</span> {s.detail}
-                        </li>
-                    ))}
-                </ol>
+                <StepList steps={steps} />
             ) : (
                 <pre className="rc-stream">{analysis.text || (streaming ? "分析中…" : "")}</pre>
             )}

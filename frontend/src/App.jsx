@@ -55,8 +55,8 @@ function ReasonPaneHost() {
     if (!app.tabs.length || !app.activeTab) return null;
     if (!app.reasonOpen) {
         return (
-            <button id="reason-reopen" onClick={app.toggleReason} title="打开 AI 推理窗格">
-                AI
+            <button id="reason-reopen" onClick={app.toggleReason} title="显示 AI 推理窗格（Ctrl+Shift+A）">
+                AI 推理
             </button>
         );
     }
@@ -103,6 +103,11 @@ function SessionWindow() {
                 } else if (code === "Comma") {
                     e.preventDefault();
                     app.appAction("settings");
+                } else if (code === "KeyA") {
+                    // The reasoning pane can be collapsed with its ✕; this is the
+                    // keyboard way back (the menu bar carries the same toggle).
+                    e.preventDefault();
+                    app.toggleReason();
                 }
                 return;
             }

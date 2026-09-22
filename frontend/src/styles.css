@@ -853,14 +853,17 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 }
 /* Collapsed state: a slim strip that brings the pane back. */
 #reason-reopen {
-  flex: 0 0 26px;
-  width: 26px;
+  flex: 0 0 30px;
+  width: 30px;
   border: none;
   border-left: 1px solid var(--border);
   background: var(--panel);
-  color: var(--dim);
+  /* Accent-coloured so the collapsed pane is actually findable: this strip is the
+     only in-window way back (the view menu and Ctrl+Shift+A also toggle it). */
+  color: var(--accent);
   cursor: pointer;
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 1px;
   writing-mode: vertical-rl;
 }
@@ -885,6 +888,15 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 .rc-note.err { color: var(--danger); }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .rc-head.clickable { cursor: pointer; }
+/* Shown while the reply streams, so the raw text below is not mistaken for the
+   final answer. */
+.rc-thinking { font-size: 11px; color: var(--dim); }
+/* The parsed steps are the readable form of the reply; the raw text stays
+   available behind this toggle so nothing the model said is lost. */
+.rc-raw { margin-top: 6px; }
+.rc-raw > summary { font-size: 11.5px; color: var(--dim); cursor: pointer; user-select: none; }
+.rc-raw > summary:hover { color: var(--text); }
+.rc-raw .rc-stream { margin-top: 4px; max-height: 240px; }
 .rc-title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-text { color: var(--dim); line-height: 1.6; }
 .rc-cmd, .rc-excerpt, .rc-stream {
@@ -902,7 +914,29 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 }
 .rc-excerpt, .rc-stream { max-height: 180px; overflow: auto; color: var(--dim); }
 .rc-steps { list-style: none; display: flex; flex-direction: column; gap: 4px; color: var(--dim); line-height: 1.6; }
-.rc-step-label { color: var(--accent); font-family: ui-monospace, monospace; }
+.rc-step-label { font-family: ui-monospace, monospace; }
+/* Visual weight by step kind: the model's narration is recessive so the findings
+   and warnings it states are what stands out when the card is skimmed. */
+.rc-step.tone-narration { color: var(--faint); font-size: 11.5px; }
+.rc-step.tone-narration .rc-step-label { color: var(--faint); }
+.rc-step.tone-point,
+.rc-step.tone-conclusion { color: var(--text); }
+.rc-step.tone-point .rc-step-label,
+.rc-step.tone-conclusion .rc-step-label { color: var(--accent); }
+.rc-step.tone-conclusion .rc-step-label { font-weight: 600; }
+.rc-step.tone-action { color: var(--accent); }
+.rc-step.tone-action .rc-step-label { color: var(--accent); }
+.rc-step.tone-command { color: var(--accent-2); }
+.rc-step.tone-command .rc-step-label { color: var(--accent-2); }
+.rc-step.tone-command .rc-step-detail { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.rc-step.tone-risk {
+  color: var(--warn);
+  background: rgba(251, 191, 80, .1);
+  border-left: 2px solid var(--warn);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+.rc-step.tone-risk .rc-step-label { color: var(--warn); font-weight: 600; }
 .rc-findings { list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .rc-findings li { display: flex; gap: 6px; align-items: flex-start; color: var(--dim); }
 .rc-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }

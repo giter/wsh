@@ -1,0 +1,272 @@
+// Reasoning-pane flow check.
+//
+// The smoke test only proves the app boots; this one drives the third column the
+// way a user does and asserts on the DOM: open a tab, collapse the pane and bring
+// it back through each of its three affordances, then ask a natural-language
+// question and check that the question card, the answer card and the parsed
+// thinking steps all render.
+//
+// It exists because the pane's behaviour (collapse cycle, conversation cards,
+// streaming vs parsed reply) cannot be eyeballed in a headless environment.
+//
+// Run with: bun run pane
+
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+    url: "http://127.0.0.1:17777/?win=main",
+    pretendToBeVisual: true,
+});
+const { window } = dom;
+globalThis.window = window;
+globalThis.document = window.document;
+globalThis.navigator = window.navigator;
+globalThis.location = window.location;
+globalThis.HTMLElement = window.HTMLElement;
+globalThis.Element = window.Element;
+globalThis.Node = window.Node;
+globalThis.Event = window.Event;
+globalThis.CustomEvent = window.CustomEvent;
+globalThis.KeyboardEvent = window.KeyboardEvent;
+globalThis.getComputedStyle = window.getComputedStyle.bind(window);
+globalThis.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
+globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+};
+// xterm queries the screen resolution on open(); jsdom has no matchMedia.
+window.matchMedia = (query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => false,
+});
+globalThis.matchMedia = window.matchMedia;
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => errors.push(e.reason));
+
+const REPLIES = {
+    "settings.get": { theme: "dark" },
+    "connections.list": [],
+    "folders.list": [],
+    "keys.list": [],
+    "ai.status": { configured: true },
+    "probes.snapshot": {},
+    "terminal.open": { sessionId: "sess-1" },
+    "terminal.exec": { written: true },
+    "ai.ask": { requestId: "req-1", kind: "command" },
+};
+
+// The fake socket is kept so the test can deliver server pushes (ai.done).
+let lastSocket = null;
+
+class FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    constructor() {
+        this.readyState = 1;
+        this.sent = [];
+        lastSocket = this;
+        setTimeout(() => this.onopen?.({}), 0);
+    }
+    send(raw) {
+        let req;
+        try {
+            req = JSON.parse(raw);
+        } catch {
+            return;
+        }
+        this.sent.push(req);
+        const data = Object.prototype.hasOwnProperty.call(REPLIES, req.method) ? REPLIES[req.method] : {};
+        setTimeout(() => this.onmessage?.({ data: JSON.stringify({ id: req.id, ok: true, data }) }), 0);
+    }
+    close() {}
+    addEventListener() {}
+    removeEventListener() {}
+}
+globalThis.WebSocket = FakeWebSocket;
+window.WebSocket = FakeWebSocket;
+
+const React = (await import("react")).default;
+const ReactDOMClient = await import("react-dom/client");
+const { default: App } = await import("../src/App.jsx");
+const { AppProvider } = await import("../src/state/store.jsx");
+
+const root = ReactDOMClient.createRoot(document.getElementById("root"));
+root.render(React.createElement(AppProvider, null, React.createElement(App)));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const tick = async (n = 6) => {
+    for (let i = 0; i < n; i++) await sleep(10);
+};
+
+await tick(20);
+
+// Open a quick-connect tab so the third column exists at all.
+const qc = document.querySelector("#quick-connect input");
+if (!qc) throw new Error("quick connect input not found");
+const setValue = (el, v) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    setter.call(el, v);
+    el.dispatchEvent(new window.Event("input", { bubbles: true }));
+};
+setValue(qc, "ssh://lee@192.168.8.33:22");
+await tick();
+
+const connectBtn = [...document.querySelectorAll("#quick-connect button")].find((b) => b.textContent.includes("连接"));
+if (!connectBtn) throw new Error("connect button not found");
+connectBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await tick(30);
+
+const report = (label, ok, extra = "") => console.log(`${ok ? "✓" : "✗"} ${label}${extra ? " — " + extra : ""}`);
+
+const pane = document.getElementById("reason-pane");
+report("pane visible after opening a tab", !!pane);
+if (!pane) {
+    console.log("tabs in DOM:", document.querySelectorAll(".tab-page").length);
+    process.exit(1);
+}
+
+// 1) Collapse via the header ✕, then reopen via the strip.
+const closeBtn = [...document.querySelectorAll("#reason-header .icon-btn")].find((b) => b.textContent.includes("✕"));
+closeBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await tick();
+const strip = document.getElementById("reason-reopen");
+report("collapsed pane leaves a reopen strip", !!strip, strip ? JSON.stringify(strip.textContent) : "");
+
+if (strip) {
+    strip.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick();
+    report("clicking the strip reopens the pane", !!document.getElementById("reason-pane"));
+}
+
+// 2) Ctrl+Shift+A toggles it too.
+const key = (code, shift) =>
+    document.dispatchEvent(new window.KeyboardEvent("keydown", { code, key: code, ctrlKey: true, shiftKey: shift, bubbles: true }));
+key("KeyA", true);
+await tick();
+report("Ctrl+Shift+A collapses the pane", !document.getElementById("reason-pane"));
+key("KeyA", true);
+await tick();
+report("Ctrl+Shift+A brings it back", !!document.getElementById("reason-pane"));
+
+// 3) The view menu carries a toggle.
+const viewBtn = [...document.querySelectorAll(".menubar .menu-item > button")].find((b) => b.textContent === "视图");
+viewBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await tick();
+const labels = [...document.querySelectorAll(".menu-dropdown .mi-label")].map((s) => s.textContent);
+report("view menu lists the pane toggle", labels.some((l) => l.includes("AI 推理窗格")), labels.join(" / "));
+
+if (errors.length) {
+    console.log("errors during run:", errors.slice(0, 3).map((e) => e?.stack || e));
+    process.exit(1);
+}
+
+// 4) A natural-language turn shows the question and the answer in the pane.
+const field = document.querySelector("#smart-input .si-field");
+report("smart input rendered", !!field);
+if (field) {
+    setValue(field, "当前系统状态");
+    await tick();
+    field.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const ask = document.querySelector(".reason-card.ask");
+    report("the question becomes its own card", !!ask, ask ? JSON.stringify(ask.textContent.slice(0, 30)) : "");
+    const reply = [...document.querySelectorAll(".reason-card.cot .rc-title")].map((e) => e.textContent);
+    report("the answer card exists", reply.includes("AI 回复"), reply.join(" / "));
+    report("the input was cleared", field.value === "");
+
+    // Finish the stream with a bracketed reply: steps plus the raw thinking.
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "ai.done",
+            requestId: "req-1",
+            ok: true,
+            text: "[意图分析] 用户想查看系统状态\n[生成指令] uptime",
+            steps: [
+                { label: "意图分析", detail: "用户想查看系统状态" },
+                { label: "生成指令", detail: "uptime" },
+            ],
+            command: "uptime",
+        }),
+    });
+    await tick();
+    const steps = document.querySelectorAll(".reason-card.cot .rc-steps li");
+    report("parsed steps are rendered", steps.length === 2, [...steps].map((s) => s.textContent).join(" | "));
+    const rawSummary = document.querySelector(".rc-raw > summary");
+    report("the raw thinking stays available", !!rawSummary, rawSummary ? rawSummary.textContent : "");
+
+    // The result analysis must be scannable: narration recedes, findings and
+    // warnings do not, and a collapsed card still advertises its warning.
+    //
+    // Drive it the way the app does: press 立即执行 on the card, then echo the
+    // trackId it used back in a terminal.output push, exactly like the backend.
+    const execBtn = [...document.querySelectorAll(".rc-generated .rc-actions button")].find((b) =>
+        b.textContent.includes("立即执行"),
+    );
+    report("the command card offers 立即执行", !!execBtn);
+    execBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const execReq = [...lastSocket.sent].reverse().find((r) => r.method === "terminal.exec");
+    const trackId = execReq?.params?.trackId;
+    report("the execution is tagged with the card id", !!trackId, `trackId=${trackId}`);
+
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "terminal.output",
+            sessionId: "sess-1",
+            trackId,
+            command: "uptime",
+            text: " 10:53 up 3 days,  1 user,  load average: 0.12",
+            durationMs: 400,
+        }),
+    });
+    await tick();
+
+    const asks = lastSocket.sent.filter((r) => r.method === "ai.ask");
+    report("the captured output triggers a result analysis", asks.length >= 2, `ai.ask × ${asks.length}`);
+    lastSocket.onmessage({
+        data: JSON.stringify({
+            type: "ai.done",
+            requestId: "req-1",
+            ok: true,
+            text: "[结论] ok",
+            steps: [
+                { label: "结论", detail: "命令执行成功，未发现异常" },
+                { label: "要点", detail: "wglink 占用 0.7% CPU" },
+                { label: "风险", detail: "1080/1081 端口疑似代理服务，需确认" },
+            ],
+        }),
+    });
+    await tick();
+
+    const tones = [...document.querySelectorAll(".rc-analysis .rc-step")].map((li) => li.className);
+    report("analysis steps carry a tone class", tones.length === 3, tones.join(" | "));
+    report(
+        "the warning is singled out from the points",
+        tones.some((c) => c.includes("tone-risk")) && tones.some((c) => c.includes("tone-point")),
+    );
+    const badge = [...document.querySelectorAll(".rc-head .risk-pill")].map((e) => e.textContent);
+    report("the card header advertises the warning", badge.some((t) => t.includes("有风险提示")), badge.join(" | "));
+    const narration = [...document.querySelectorAll(".rc-step.tone-narration")].length;
+    report("narration is rendered recessively", narration > 0, `${narration} narration step(s)`);
+}
+
+if (errors.length) {
+    console.log("errors during run:", errors.slice(0, 3).map((e) => e?.stack || e));
+    process.exit(1);
+}
+process.exit(0);

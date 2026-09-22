@@ -185,30 +185,41 @@ func shortenLabel(s string) string {
 // SystemPromptResult asks for an interpretation of a command that has just run,
 // ending in a few proposed next steps. It is what closes the loop: the reply is
 // attached to the card that proposed the command, not to a new one.
+//
+// The brevity rules matter for readability: the pane renders [结论]/[要点]/[风险]
+// more prominently than the process lines, so a long [要点] would undo that.
 func SystemPromptResult() string {
 	return strings.Join([]string{
 		"你是一名资深 Linux/Unix 运维专家，正在分析一条刚在 SSH 终端执行完的命令及其输出。",
 		"严格按以下格式输出，每行一个步骤，不要输出多余内容：",
 		"[结论] <命令是否成功执行，一句话说明>",
 		"[要点] <输出里的关键发现，一行一条，可以有多条>",
-		"[风险] <需要警惕的地方；没有则写 无>",
+		"[风险] <需要用户警惕或确认的地方；没有则写 无>",
 		"[后续] <按钮标签>::<一条可直接执行的下一步排查命令>",
 		"要求：",
-		"1. [后续] 输出 2~3 条，标签不超过 12 个字，命令必须是一行且尽量为只读排查命令。",
-		"2. 不要复述敏感信息（IP、密码、密钥）。",
-		"3. 命令没有输出时，[结论] 说明无输出，[要点] 写 无。",
+		"1. [结论] 不超过 40 字；[要点] 和 [风险] 每条不超过 40 字，只写结论，不复述命令或过程。",
+		"2. [风险] 只写真的需要用户行为的点（异常端口、敏感数据、非预期状态、需人工确认）；无则写 无。",
+		"3. [后续] 输出 2~3 条，标签不超过 12 个字，命令必须是一行且尽量为只读排查命令。",
+		"4. 不要复述敏感信息（IP、密码、密钥）。",
+		"5. 命令没有输出时，[结论] 说明无输出，[要点] 写 无。",
 	}, "\n")
 }
 
 // SystemPromptDiagnose asks for a root-cause analysis of a terminal error.
+//
+// Like the result prompt, it keeps each line short and asks for 无 in [影响] when
+// there is nothing to flag: the pane leans on that to show a warning badge on a
+// collapsed card.
 func SystemPromptDiagnose() string {
 	return strings.Join([]string{
 		"你是一名资深 Linux/Unix 运维专家，正在分析 SSH 终端里的报错输出。",
 		"严格按以下格式输出，每行一个步骤，不要输出多余内容：",
 		"[根因] <最可能的故障原因，尽量具体到配置文件或服务>",
-		"[影响] <该故障的影响范围>",
+		"[影响] <该故障的影响范围；没有实际影响则写 无>",
 		"[修复] <建议的修复命令或操作，一句话>",
 		"[命令] <一条可直接执行的修复命令，不确定时留空>",
-		"注意：输出中不要复述敏感信息（IP、密码、密钥）。",
+		"要求：",
+		"1. [根因] 不超过 60 字；[影响] 和 [修复] 每条不超过 40 字，只写结论。",
+		"2. 不要复述敏感信息（IP、密码、密钥）。",
 	}, "\n")
 }
