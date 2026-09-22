@@ -178,9 +178,9 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
             </label>
 
             <div className="field">
-                <span>跳板机（按选择顺序串联）</span>
+                <span>{tr("conn.jumpHosts")}</span>
                 {jumpCandidates.length === 0 ? (
-                    <div className="muted" style={{ fontSize: 12 }}>还没有其它连接可作为跳板机</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{tr("conn.jumpHostsEmpty")}</div>
                 ) : (
                     <div className="jump-list">
                         {jumpCandidates.map((c) => {

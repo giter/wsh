@@ -53,11 +53,12 @@ function isTextInputFocused() {
 // strip that brings it back after it is collapsed.
 function ReasonPaneHost() {
     const app = useApp();
+    const t = useT();
     if (!app.tabs.length || !app.activeTab) return null;
     if (!app.reasonOpen) {
         return (
-            <button id="reason-reopen" onClick={app.toggleReason} title="显示 AI 推理窗格（Ctrl+Shift+A）">
-                AI 推理
+            <button id="reason-reopen" onClick={app.toggleReason} title={t("app.reason.reopenTip")}>
+                {t("app.reason.pane")}
             </button>
         );
     }

@@ -72,6 +72,10 @@ export default {
         "conn.noManagedKey": "No managed key",
         "conn.keyPath": "Private key file path",
         "conn.keyPathPlaceholder": "Optional: /path/to/id_rsa",
+        "conn.jumpHosts": "Jump hosts (chained in selection order)",
+        "conn.jumpHostsEmpty": "No other connections available as jump hosts",
+
+        "sidebar.statsTitle": "CPU {cpu} · Mem {mem} · Disk {disk}",
 
         "keys.nameRequired": "Key name is required",
         "keys.privRequired": "Private key content is required",
@@ -179,6 +183,10 @@ export default {
         "conn.noManagedKey": "不使用托管密钥",
         "conn.keyPath": "私钥文件路径",
         "conn.keyPathPlaceholder": "可选：/path/to/id_rsa",
+        "conn.jumpHosts": "跳板机（按选择顺序串联）",
+        "conn.jumpHostsEmpty": "还没有其它连接可作为跳板机",
+
+        "sidebar.statsTitle": "CPU {cpu} · 内存 {mem} · 磁盘 {disk}",
 
         "keys.nameRequired": "请输入密钥名称",
         "keys.privRequired": "请提交私钥内容",

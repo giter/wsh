@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc.js";
 import { useApp } from "../state/store.jsx";
 import { looksLikeNaturalLanguage } from "../lib/intent.js";
+import { t, useT } from "../lib/i18n.js";
 
 // SmartInput is the always-on input bar under the terminal. It carries both
 // tracks: a shell command is sent to the remote PTY, natural language is turned
@@ -13,6 +14,7 @@ import { looksLikeNaturalLanguage } from "../lib/intent.js";
 // never shown twice and the whole conversation lives in one place.
 export default function SmartInput({ tabId, sessionId, title, altScreen, onFocusTerminal }) {
     const app = useApp();
+    const t = useT();
     const [value, setValue] = useState("");
     const [risk, setRisk] = useState(null);
     const [mode, setMode] = useState("auto"); // auto | shell | ai
@@ -127,7 +129,7 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
             // No model configured: the text goes to the shell verbatim, which is
             // what this bar did before AI existed.
             execute(value, trackFor(value)).then((res) => {
-                if (res?.status === "written") setNote("未配置 AI 提供方，已按原样作为命令执行");
+                if (res?.status === "written") setNote(t("smart.noAIExecuted"));
             });
             return;
         }
@@ -158,11 +160,11 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
                 const done = await waitForAI(req.requestId);
                 if (disposedRef.current) return;
                 if (!done || !done.ok) {
-                    setNote(done?.error || "AI 未返回可用结果");
+                    setNote(done?.error || t("smart.aiNoResult"));
                     return;
                 }
                 if (!done.command) {
-                    setNote("AI 没有给出可执行的命令，请换一种说法");
+                    setNote(t("smart.aiNoCommand"));
                     return;
                 }
                 await execute(done.command, req.cardId);
@@ -183,7 +185,7 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
             // run what the model is about to produce, without a review step.
             const force = e.ctrlKey || e.metaKey;
             if (level === "blocked" && !force) {
-                setNote(risk?.reason || "高危命令已禁用执行");
+                setNote(risk?.reason || t("smart.blockedDisabled"));
                 return;
             }
             const useAI = route === "ai";
@@ -215,17 +217,17 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
                 app.cancelAI(rid);
                 activeReqRef.current = null;
                 setBusy(false);
-                setNote("已中断 AI 生成");
+                setNote(t("smart.aiInterrupted"));
                 return;
             }
             if (busy) {
                 setBusy(false);
-                setNote("已中断 AI 生成");
+                setNote(t("smart.aiInterrupted"));
                 return;
             }
             if (running && value.trim() === "") {
                 app.interruptTab(tabId);
-                setNote("已向终端发送 Ctrl+C");
+                setNote(t("smart.ctrlCSent"));
                 return;
             }
             setValue("");
@@ -238,8 +240,8 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
     if (altScreen) {
         return (
             <div id="smart-input" className="alt-passthrough">
-                <span className="mode-pill">透传模式</span>
-                <span className="muted">全屏应用运行中，键盘输入已直接转发给远端（Esc 退出全屏后恢复）</span>
+                <span className="mode-pill">{t("smart.passthrough")}</span>
+                <span className="muted">{t("smart.passthroughHint")}</span>
             </div>
         );
     }
@@ -252,7 +254,7 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
                     ref={inputRef}
                     className="si-field"
                     value={value}
-                    placeholder={aiReady ? "输入命令，或描述你的意图…" : "输入命令（配置 AI 后可用自然语言）"}
+                    placeholder={aiReady ? t("smart.placeholder") : t("smart.placeholderNoAI")}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={onKeyDown}
                     spellCheck={false}
@@ -262,24 +264,18 @@ export default function SmartInput({ tabId, sessionId, title, altScreen, onFocus
                     className="si-mode"
                     value={mode}
                     onChange={(e) => setMode(e.target.value)}
-                    title={
-                        "解析模式（只决定输入怎么理解，不决定是否执行）：\n" +
-                        "自动判别：中文或疑问句交给 AI 生成命令，其余按命令执行；\n" +
-                        "仅当命令：一律按 shell 命令原样发送；\n" +
-                        "仅交给 AI：一律由模型生成命令。\n" +
-                        "执行与否、是否需要确认，始终由本地安全引擎决定。"
-                    }
+                    title={t("smart.modeTip")}
                 >
-                    <option value="auto">自动判别</option>
-                    <option value="shell">仅当命令</option>
-                    <option value="ai">仅交给 AI</option>
+                    <option value="auto">{t("smart.modeAuto")}</option>
+                    <option value="shell">{t("smart.modeShell")}</option>
+                    <option value="ai">{t("smart.modeAI")}</option>
                 </select>
-                <span className={"si-lock level-" + level} title="本地 AST 安全引擎">
+                <span className={"si-lock level-" + level} title={t("smart.astEngine")}>
                     {level === "safe" ? "🔒 AST" : level === "caution" ? "⚠ AST" : "⛔ AST"}
                 </span>
                 {busy && (
-                    <span className="si-thinking" title="按 Esc 中断">
-                        <span className="spinner small" /> 流式思考中…
+                    <span className="si-thinking" title={t("smart.escToInterrupt")}>
+                        <span className="spinner small" /> {t("smart.thinking")}
                     </span>
                 )}
             </div>
@@ -303,18 +299,18 @@ function StatusLine({ value, risk, level, route, aiReady, note, running }) {
         if (running) {
             // A command is still producing output: the useful key is Esc, not
             // another command.
-            return <div className="si-status level-caution">命令运行中 · Esc 发送 Ctrl+C 停止</div>;
+            return <div className="si-status level-caution">{t("smart.runningHint")}</div>;
         }
         return (
             <div className="si-status idle">
-                {aiReady ? "Tab 填入最新 AI 指令 · Ctrl+Enter 直接执行" : "Enter 执行命令"}
+                {aiReady ? t("smart.hintAI") : t("smart.hintEnter")}
             </div>
         );
     }
     if (route === "ai") {
         return (
             <div className="si-status level-ai">
-                将交给 AI 生成指令（Enter 生成 · Ctrl+Enter 生成并执行）
+                {t("smart.willAsk")}
             </div>
         );
     }
@@ -326,18 +322,18 @@ function StatusLine({ value, risk, level, route, aiReady, note, running }) {
     if (level === "blocked") {
         return (
             <div className="si-status level-blocked">
-                红区 · 已阻断{risk.reason ? "：" + risk.reason : ""}（无法执行）
+                {t("smart.blockedZone", { reason: risk.reason ? "：" + risk.reason : "" })}
             </div>
         );
     }
     if (level === "caution") {
         return (
             <div className="si-status level-caution">
-                将作为命令执行 · 黄区 · 需确认{risk.reason ? "：" + risk.reason : ""}
+                {t("smart.cautionZone", { reason: risk.reason ? "：" + risk.reason : "" })}
             </div>
         );
     }
-    return <div className="si-status">将作为命令执行 · 绿区 · 安全（Enter 执行）</div>;
+    return <div className="si-status">{t("smart.safeZone")}</div>;
 }
 
 // waitForAI resolves with the ai.done message for one request.

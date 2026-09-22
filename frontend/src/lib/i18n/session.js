@@ -101,6 +101,7 @@ export default {
         "term.connectFailed": "Connection failed",
         "term.zmodemWait": "Remote rz is waiting to receive a file",
         "term.pickFile": "Choose file…",
+        "term.rcaTitle": "Root-cause analysis · {kind}",
     },
     zh: {
         // Sidebar
@@ -202,5 +203,6 @@ export default {
         "term.connectFailed": "连接失败",
         "term.zmodemWait": "远端 rz 正在等待接收文件",
         "term.pickFile": "选择文件…",
+        "term.rcaTitle": "根因分析 · {kind}",
     },
 };

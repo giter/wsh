@@ -7,6 +7,7 @@ import { LANGUAGES, useT } from "../lib/i18n.js";
 // list is shown with a way to revoke each entry (or all of them).
 function AllowedCommands() {
     const app = useApp();
+    const t = useT();
     const [err, setErr] = useState("");
 
     useEffect(() => {
@@ -22,16 +23,16 @@ function AllowedCommands() {
     return (
         <div className="allowed-cmds">
             <div className="allowed-cmds-head">
-                <span>已始终允许的命令</span>
+                <span>{t("settings.allow.title")}</span>
                 {app.allowedCommands.length > 0 && (
                     <button className="btn small danger" onClick={() => revoke("", true)}>
-                        全部清除
+                        {t("settings.allow.clearAll")}
                     </button>
                 )}
             </div>
             {app.allowedCommands.length === 0 ? (
                 <p className="muted">
-                    暂无。在右侧影子推演面板点「始终允许」的命令会出现在这里，之后不再询问。
+                    {t("settings.allow.empty")}
                 </p>
             ) : (
                 <ul className="allowed-cmds-list">
@@ -39,7 +40,7 @@ function AllowedCommands() {
                         <li key={c}>
                             <code>{c}</code>
                             <button className="btn small" onClick={() => revoke(c, false)}>
-                                移除
+                                {t("settings.allow.remove")}
                             </button>
                         </li>
                     ))}
@@ -136,7 +137,7 @@ export default function SettingsPage() {
                 aiAutoRun: form.aiAutoRun,
             });
             setForm((f) => ({ ...f, aiKey: "" }));
-            setStatus({ msg: "已清除密钥", err: false });
+            setStatus({ msg: t("settings.keyCleared"), err: false });
         } catch (e) {
             setStatus({ msg: e.message, err: true });
         }
@@ -225,18 +226,18 @@ export default function SettingsPage() {
                     </div>
                 </section>
                 <section className="card">
-                    <h3>AI 推理</h3>
+                    <h3>{t("settings.ai.title")}</h3>
                     <div className="grid">
                         <label className="field">
-                            <span>提供方</span>
+                            <span>{t("settings.ai.provider")}</span>
                             <select value={form.aiProvider} onChange={set("aiProvider")}>
-                                <option value="">关闭</option>
-                                <option value="openai">OpenAI 兼容接口</option>
-                                <option value="ollama">Ollama（本地离线）</option>
+                                <option value="">{t("settings.ai.providerOff")}</option>
+                                <option value="openai">{t("settings.ai.providerOpenai")}</option>
+                                <option value="ollama">{t("settings.ai.providerOllama")}</option>
                             </select>
                         </label>
                         <label className="field">
-                            <span>模型</span>
+                            <span>{t("settings.ai.model")}</span>
                             <input
                                 placeholder={form.aiProvider === "ollama" ? "qwen2.5:7b" : "gpt-4o-mini"}
                                 value={form.aiModel}
@@ -244,7 +245,7 @@ export default function SettingsPage() {
                             />
                         </label>
                         <label className="field">
-                            <span>Base URL</span>
+                            <span>{t("settings.ai.baseUrl")}</span>
                             <input
                                 placeholder={
                                     form.aiProvider === "ollama"
@@ -256,10 +257,10 @@ export default function SettingsPage() {
                             />
                         </label>
                         <label className="field">
-                            <span>API Key{app.settings.hasAiKey ? "（已保存）" : ""}</span>
+                            <span>{app.settings.hasAiKey ? t("settings.ai.apiKeySaved") : t("settings.ai.apiKey")}</span>
                             <input
                                 type="password"
-                                placeholder={app.settings.hasAiKey ? "留空保持不变" : "本地 Ollama 可留空"}
+                                placeholder={app.settings.hasAiKey ? t("settings.ai.keyPlaceholderKeep") : t("settings.ai.keyPlaceholderEmpty")}
                                 value={form.aiKey}
                                 onChange={set("aiKey")}
                                 autoComplete="off"
@@ -270,34 +271,32 @@ export default function SettingsPage() {
                     <div className="check-row">
                         <label>
                             <input type="checkbox" checked={form.aiAutoRun} onChange={setCheck("aiAutoRun")} />
-                            AI 生成命令后自动执行绿区命令
+                            {t("settings.ai.autoRun")}
                         </label>
                     </div>
                     <div className="check-row">
                         <label>
                             <input type="checkbox" checked={form.aiAutoAnalyze} onChange={setCheck("aiAutoAnalyze")} />
-                            终端报错时自动根因分析
+                            {t("settings.ai.autoAnalyze")}
                         </label>
                     </div>
                     <div className="check-row">
                         <label>
                             <input type="checkbox" checked={form.aiNoContext} onChange={setCheck("aiNoContext")} />
-                            不发送终端上下文（仅发送我的提问）
+                            {t("settings.ai.noContext")}
                         </label>
                     </div>
                     <p className="muted" style={{ marginTop: 8, lineHeight: 1.7 }}>
-                        上下文与提问都会先经过本地脱敏（IP、密码、Token 等替换为占位符）；
-                        安全判定始终由本地 AST 引擎完成，不依赖模型输出。
+                        {t("settings.ai.privacyNote")}
                     </p>
                     <p className="muted" style={{ marginTop: 6, lineHeight: 1.7 }}>
-                        自动执行只对**绿区**生效：黄区会在右侧影子推演中停下来等你确认，红区仍然直接阻断。
-                        注意绿区是「默认放行」而非「只读」，`systemctl start`、`rm /tmp/x` 这类变更命令也属于绿区。
+                        {t("settings.ai.autoRunNote")}
                     </p>
                     <AllowedCommands />
                     {app.settings.hasAiKey && (
                         <div style={{ marginTop: 8 }}>
                             <button className="btn small danger" onClick={clearKey}>
-                                清除已保存的密钥
+                                {t("settings.ai.clearKey")}
                             </button>
                         </div>
                     )}

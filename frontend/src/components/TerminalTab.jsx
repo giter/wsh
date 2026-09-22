@@ -153,7 +153,7 @@ export default function TerminalTab({ tab, active }) {
                     sessionId: sid,
                     kind: "diagnose",
                     excerpt: m.excerpt,
-                    title: "根因分析 · " + errorTitle(m.kind),
+                    title: t("term.rcaTitle", { kind: errorTitle(m.kind) }),
                 });
             };
             a.pushReason({

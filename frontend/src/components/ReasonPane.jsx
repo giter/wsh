@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.jsx";
 import { riskLabel, sevLabel } from "../lib/intent.js";
+import { t, useT } from "../lib/i18n.js";
 
 // ReasonPane is the right-hand column: everything that is "thinking" rather than
 // "typing" lives here, so the terminal itself is never polluted by AI output.
@@ -12,6 +13,7 @@ import { riskLabel, sevLabel } from "../lib/intent.js";
 //   - blocked-command notices from the safety engine.
 export default function ReasonPane({ tabId }) {
     const app = useApp();
+    const t = useT();
     const items = app.reason.filter((r) => r.tabId === tabId);
     // The card that most recently changed (see noteFocus in the store) is kept
     // open alongside the newest one.
@@ -40,14 +42,14 @@ export default function ReasonPane({ tabId }) {
         <aside id="reason-pane">
             <div id="reason-header">
                 <span className="logo-dot" />
-                <span className="logo-text">AI 推理</span>
+                <span className="logo-text">{t("reason.title")}</span>
                 <span className="grow" />
                 {items.length > 0 && (
-                    <button className="icon-btn" title="清空" onClick={() => app.clearReason(tabId)}>
+                    <button className="icon-btn" title={t("reason.clear")} onClick={() => app.clearReason(tabId)}>
                         🗑
                     </button>
                 )}
-                <button className="icon-btn" title="收起（Ctrl+Shift+A 可重新打开）" onClick={() => app.toggleReason()}>
+                <button className="icon-btn" title={t("reason.collapse")} onClick={() => app.toggleReason()}>
                     ✕
                 </button>
             </div>
@@ -56,10 +58,10 @@ export default function ReasonPane({ tabId }) {
                 {!app.aiStatus?.configured && !pending && (
                     <div className="reason-empty">
                         <div>
-                            未配置 AI 提供方。本地安全引擎仍然工作：高危命令会被直接阻断，黄区命令会在此处推演确认。
+                            {t("reason.notConfigured")}
                         </div>
                         <div className="muted" style={{ marginTop: 6 }}>
-                            在「选项 → AI 推理」中配置 OpenAI 兼容接口或本地 Ollama。
+                            {t("reason.notConfiguredHint")}
                         </div>
                     </div>
                 )}
@@ -68,7 +70,7 @@ export default function ReasonPane({ tabId }) {
 
                 {items.length === 0 && !pending && app.aiStatus?.configured && (
                     <div className="reason-empty">
-                        暂无推理内容。在底部输入自然语言，或让终端抛出错误后自动诊断。
+                        {t("reason.empty")}
                     </div>
                 )}
 
@@ -97,9 +99,9 @@ function DryRunCard({ pending }) {
     return (
         <div className="reason-card dry-run">
             <div className="rc-head">
-                <span className="risk-pill level-caution">影子推演</span>
-                <span className="rc-title">该命令需要确认</span>
-                {pending.auto && <span className="rc-thinking">AI 自动发起</span>}
+                <span className="risk-pill level-caution">{t("reason.dryRun")}</span>
+                <span className="rc-title">{t("reason.needsConfirm")}</span>
+                {pending.auto && <span className="rc-thinking">{t("reason.autoInitiated")}</span>}
             </div>
             <code className="rc-cmd">{pending.command}</code>
             <ul className="rc-findings">
@@ -112,20 +114,20 @@ function DryRunCard({ pending }) {
             </ul>
             <div className="rc-actions">
                 <button className="btn small" onClick={pending.onCancel}>
-                    取消
+                    {t("reason.cancel")}
                 </button>
-                <button className="btn small" onClick={() => confirm("")} title="只放行这一次">
-                    仅此一次
+                <button className="btn small" onClick={() => confirm("")} title={t("reason.onceTip")}>
+                    {t("reason.once")}
                 </button>
-                <button className="btn small" onClick={() => confirm("session")} title="本会话内不再询问这条命令">
-                    本会话允许
+                <button className="btn small" onClick={() => confirm("session")} title={t("reason.allowSessionTip")}>
+                    {t("reason.allowSession")}
                 </button>
-                <button className="btn primary small" onClick={() => confirm("always")} title="永久放行这条命令，可在「选项 → AI 推理」中移除">
-                    始终允许
+                <button className="btn primary small" onClick={() => confirm("always")} title={t("reason.alwaysAllowTip")}>
+                    {t("reason.alwaysAllow")}
                 </button>
             </div>
             <div className="rc-allow-hint">
-                「本会话允许」和「始终允许」只对这条命令本身生效（完全相同的一行），不会放宽其他命令。
+                {t("reason.allowHint")}
             </div>
         </div>
     );
@@ -216,31 +218,35 @@ function cardSummary(item) {
     const note = hit ? hit.detail : "";
     const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
     // A failed generation has nothing else to show; a failed analysis must not be
-    // summarised as if it had produced a reading. Both carry a 重试 in the card.
-    if (item.status === "error") return `⚠ ${item.title || "AI 请求"}失败`;
-    if (item.status === "cancelled") return `已取消 · ${cmd || item.title || "AI 请求"}`;
-    if (item.analysis?.status === "error") return `⚠ ${cmd} · 结果分析失败`;
+    // summarised as if it had produced a reading. Both carry a retry in the card.
+    if (item.status === "error") return t("reason.failedSummary", { title: item.title || t("reason.aiRequest") });
+    if (item.status === "cancelled")
+        return t("reason.cancelledSummary", { target: cmd || item.title || t("reason.aiRequest") });
+    if (item.analysis?.status === "error") return t("reason.analysisFailedSummary", { cmd });
     switch (exec.status) {
         case "running":
-            return `⏳ ${cmd} · 执行中…`;
+            return t("reason.summaryRunning", { cmd });
         case "waiting":
-            return `🟡 ${cmd} · 等待输入`;
+            return t("reason.summaryWaiting", { cmd });
         case "streaming":
-            return `🟡 ${cmd} · 持续监听中`;
+            return t("reason.summaryStreaming", { cmd });
         case "timeout":
-            return `🟡 ${cmd} · 已截取前 ${secs}s 输出`;
+            return t("reason.summaryTimeout", { cmd, secs });
         case "blocked":
-            return `⛔ ${cmd} · 已阻断`;
+            return t("reason.summaryBlocked", { cmd });
         case "confirm":
-            return `⚠ ${cmd} · 待确认`;
+            return t("reason.summaryConfirm", { cmd });
         case "error":
-            return `⚠ ${cmd} · 执行失败`;
+            return t("reason.summaryError", { cmd });
         case "done":
             // A segment that ended at a password prompt is not a green result.
-            if (exec.waitingInput) return `🟡 ${cmd} · 停在输入提示，未确认结果`;
-            return `🟢 ${cmd} · ${secs}s${note ? " — " + note : ""}`;
+            if (exec.waitingInput) return t("reason.summaryStalled", { cmd });
+            return t("reason.summaryDone", { cmd, secs }) + (note ? " — " + note : "");
         default:
-            return `🤖 ${cmd || item.title || "AI 推理"}${note ? " — " + note : ""}`;
+            return (
+                t("reason.summaryDefault", { target: cmd || item.title || t("reason.aiFallback") }) +
+                (note ? " — " + note : "")
+            );
     }
 }
 
@@ -270,7 +276,7 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
         return (
             <div className="reason-card blocked">
                 <div className="rc-head">
-                    <span className="risk-pill level-blocked">已阻断</span>
+                    <span className="risk-pill level-blocked">{t("reason.blockedPill")}</span>
                     <span className="rc-title">{item.title}</span>
                 </div>
                 <div className="rc-text">{item.text}</div>
@@ -288,7 +294,7 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
                 <div className="rc-head clickable" onClick={toggle}>
                     <span className="caret">{open ? "▾" : "▸"}</span>
                     <span className="rc-ask-mark">💬</span>
-                    <span className="rc-title">{item.title || "我的提问"}</span>
+                    <span className="rc-title">{item.title || t("reason.myQuestion")}</span>
                 </div>
                 {open ? <div className="rc-ask-text">{item.text}</div> : <div className="rc-summary">{item.text}</div>}
             </div>
@@ -306,7 +312,7 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
                 {item.onAnalyze && (
                     <div className="rc-actions">
                         <button className="btn small" onClick={item.onAnalyze}>
-                            分析根因
+                            {t("reason.analyzeRca")}
                         </button>
                     </div>
                 )}
@@ -329,10 +335,10 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
                 <span className="caret">{open ? "▾" : "▸"}</span>
                 <span className="rc-title">{item.title}</span>
                 {streaming && <span className="spinner small" />}
-                {streaming && <span className="rc-thinking">思考中…</span>}
-                {item.status === "cancelled" && <span className="rc-thinking">已取消</span>}
-                {warn && <span className="risk-pill level-caution">⚠ 有风险提示</span>}
-                {item.status === "error" && <span className="risk-pill level-blocked">失败</span>}
+                {streaming && <span className="rc-thinking">{t("reason.thinking")}</span>}
+                {item.status === "cancelled" && <span className="rc-thinking">{t("reason.cancelled")}</span>}
+                {warn && <span className="risk-pill level-caution">{t("reason.warnPill")}</span>}
+                {item.status === "error" && <span className="risk-pill level-blocked">{t("reason.failed")}</span>}
             </div>
 
             {!open && <div className="rc-summary">{cardSummary(item)}</div>}
@@ -342,12 +348,12 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
                     {steps.length > 0 ? (
                         <StepList steps={steps} />
                     ) : (
-                        <pre className="rc-stream">{raw || (streaming ? "思考中…" : "")}</pre>
+                        <pre className="rc-stream">{raw || (streaming ? t("reason.thinking") : "")}</pre>
                     )}
 
                     {steps.length > 0 && raw && (
                         <details className="rc-raw">
-                            <summary>思考过程（模型原始回复）</summary>
+                            <summary>{t("reason.rawReply")}</summary>
                             <pre className="rc-stream">{raw}</pre>
                         </details>
                     )}
@@ -357,7 +363,7 @@ function ReasonCard({ item, tabId, latest, focused, onRetry }) {
                     {(item.status === "error" || item.status === "cancelled") && onRetry && (
                         <div className="rc-actions">
                             <button className="btn small" onClick={() => onRetry(null)}>
-                                重试
+                                {t("reason.retry")}
                             </button>
                         </div>
                     )}
@@ -408,7 +414,7 @@ function GeneratedCommand({ item, tabId, fill, onRetry }) {
     const reveal = () => {
         setRevealNote("");
         if (!app.revealOutput(tabId, item.id, lines)) {
-            setRevealNote("这段输出已流出终端缓冲区，无法定位");
+            setRevealNote(t("reason.outputGone"));
         }
     };
 
@@ -421,25 +427,25 @@ function GeneratedCommand({ item, tabId, fill, onRetry }) {
             onMouseLeave={() => anchored && app.hoverOutput(tabId, item.id, lines, false)}
         >
             <div className="rc-generated-head">
-                <span>生成指令</span>
+                <span>{t("reason.generatedCommand")}</span>
                 <span className={"risk-pill level-" + (item.risk?.level || "safe")}>
                     {riskLabel(item.risk?.level || "safe")}
                 </span>
             </div>
             <code className="rc-cmd">{item.command}</code>
             <div className="rc-actions">
-                <button className="btn small" onClick={() => fill(item.command, item.id)} title="也可以直接按 Tab">
-                    填入 (Tab)
+                <button className="btn small" onClick={() => fill(item.command, item.id)} title={t("reason.fillTabTip")}>
+                    {t("reason.fillTab")}
                 </button>
                 <button className="btn primary small" onClick={run} disabled={running} title="Ctrl+Enter">
-                    {running ? "执行中…" : "🚀 立即执行 (Ctrl+↵)"}
+                    {running ? t("reason.running") : t("reason.runNow")}
                 </button>
             </div>
             <div className="rc-execrow">
                 <ExecStatus exec={exec} onStop={() => app.interruptTab(tabId)} />
                 {anchored && (
-                    <button className="btn small ghost" onClick={reveal} title="滚动终端并高亮这条命令的输出">
-                        查看原始输出
+                    <button className="btn small ghost" onClick={reveal} title={t("reason.viewOutputTip")}>
+                        {t("reason.viewOutput")}
                     </button>
                 )}
             </div>
@@ -463,8 +469,8 @@ function ExecStatus({ exec, onStop }) {
     const auto = !!exec.auto;
     const secs = ((exec.durationMs || 0) / 1000).toFixed(1);
     const stop = onStop ? (
-        <button className="btn small" onClick={onStop} title="向终端发送 Ctrl+C">
-            停止 (Ctrl+C)
+        <button className="btn small" onClick={onStop} title={t("reason.stopTip")}>
+            {t("reason.stop")}
         </button>
     ) : null;
     switch (status) {
@@ -473,10 +479,10 @@ function ExecStatus({ exec, onStop }) {
                 <div className="rc-exec running">
                     <span className="spinner small" />
                     {exec.confirmed
-                        ? "已确认，等待输出…"
+                        ? t("reason.confirmedWaiting")
                         : auto
-                          ? "绿区命令已自动执行，等待输出…"
-                          : "已下发，等待输出…"}
+                          ? t("reason.autoWaiting")
+                          : t("reason.sentWaiting")}
                     {stop}
                 </div>
             );
@@ -485,7 +491,7 @@ function ExecStatus({ exec, onStop }) {
             // secret. Saying so beats a spinner that looks stuck.
             return (
                 <div className="rc-exec caution">
-                    🟡 等待输入（可能需要密码）· 在终端输入后继续
+                    {t("reason.waitingPassword")}
                     {stop}
                 </div>
             );
@@ -493,23 +499,23 @@ function ExecStatus({ exec, onStop }) {
             const el = ((exec.elapsedMs || 0) / 1000).toFixed(1);
             return (
                 <div className="rc-exec streaming">
-                    <span className="spinner small" /> 🟡 持续监听中 (Streaming…) · {el}s
+                    <span className="spinner small" /> {t("reason.streamingStatus", { el })}
                     {stop}
                 </div>
             );
         }
         case "blocked":
-            return <div className="rc-exec blocked">⛔ 已被本地安全引擎阻断{exec.reason ? "：" + exec.reason : ""}</div>;
+            return <div className="rc-exec blocked">{t("reason.blockedByEngine", { reason: exec.reason ? "：" + exec.reason : "" })}</div>;
         case "confirm":
-            return <div className="rc-exec caution">⚠ 黄区命令，需确认 — 见上方影子推演</div>;
+            return <div className="rc-exec caution">{t("reason.needConfirmExec")}</div>;
         case "error":
-            return <div className="rc-exec blocked">执行失败{exec.reason ? "：" + exec.reason : ""}</div>;
+            return <div className="rc-exec blocked">{t("reason.execFailed", { reason: exec.reason ? "：" + exec.reason : "" })}</div>;
         default: {
-            const tail = exec.truncated ? "（输出过长，已截断）" : "";
+            const tail = exec.truncated ? t("reason.truncatedTail") : "";
             if (status === "timeout") {
                 return (
                     <div className="rc-exec caution">
-                        🟡 命令仍在运行，已截取前 {secs}s 输出{tail}
+                        {t("reason.timeoutStatus", { secs, tail })}
                         {stop}
                     </div>
                 );
@@ -519,15 +525,18 @@ function ExecStatus({ exec, onStop }) {
                 // finish, so it is not a result and must not be shown as one.
                 return (
                     <div className="rc-exec caution">
-                        🟡 命令停在输入提示（如密码），未能确认执行结果
+                        {t("reason.stoppedAtPrompt")}
                         {stop}
                     </div>
                 );
             }
             return (
                 <div className="rc-exec done">
-                    {exec.confirmed ? "🟢 已确认执行（" : auto ? "⚡ 已自动执行（绿区" : "🟢 已执行（"}
-                    {secs}s）{tail}
+                    {exec.confirmed
+                        ? t("reason.doneConfirmed", { secs, tail })
+                        : auto
+                          ? t("reason.doneAuto", { secs, tail })
+                          : t("reason.done", { secs, tail })}
                 </div>
             );
         }
@@ -547,35 +556,35 @@ function ResultAnalysis({ analysis, tabId, onRetry }) {
         // One click is the whole gesture: the chip's label becomes the user's turn,
         // then the recommended command runs through the same gate. The input box is
         // never involved.
-        app.askFollowUp({ tabId, command: s.command, label: s.label || "下一步排查" });
+        app.askFollowUp({ tabId, command: s.command, label: s.label || t("reason.nextStep") });
     };
 
     return (
         <div className="rc-analysis">
             <div className="rc-analysis-head">
-                <span>🤖 AI 结果分析</span>
+                <span>{t("reason.analysisTitle")}</span>
                 {streaming && <span className="spinner small" />}
-                {analysis.status === "error" && <span className="risk-pill level-blocked">失败</span>}
+                {analysis.status === "error" && <span className="risk-pill level-blocked">{t("reason.failed")}</span>}
             </div>
             {steps.length > 0 ? (
                 <StepList steps={steps} />
             ) : (
-                <pre className="rc-stream">{analysis.text || (streaming ? "分析中…" : "")}</pre>
+                <pre className="rc-stream">{analysis.text || (streaming ? t("reason.analyzing") : "")}</pre>
             )}
             {/* The analysis is its own request, so it gets its own retry: re-running
                 the command would be a different thing entirely. */}
             {analysis.status === "error" && onRetry && (
                 <div className="rc-actions">
                     <button className="btn small" onClick={() => onRetry("analysis")}>
-                        重试分析
+                        {t("reason.retryAnalysis")}
                     </button>
                 </div>
             )}
             {suggestions.length > 0 && (
                 <div className="rc-followups">
                     <div className="rc-followups-head">
-                        <span>快捷追问</span>
-                        <span className="muted">点击即执行，仍需通过本地安全引擎</span>
+                        <span>{t("reason.followups")}</span>
+                        <span className="muted">{t("reason.followupsHint")}</span>
                     </div>
                     <div className="rc-actions">
                         {suggestions.map((s, i) => (

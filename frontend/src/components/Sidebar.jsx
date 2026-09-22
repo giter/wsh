@@ -599,6 +599,7 @@ function DetailRow({ k, v }) {
 // StatsGauge is the compact readout shown next to a host that has an open
 // session (populated by the background probe). It stays invisible otherwise.
 function StatsGauge({ st }) {
+    const t = useT();
     if (!st) return null;
     if (st.error) {
         return (
@@ -610,7 +611,7 @@ function StatsGauge({ st }) {
     const worst = Math.max(st.cpuPercent || 0, st.memPercent || 0, st.diskPercent || 0);
     const level = worst >= 90 ? "high" : worst >= 70 ? "warn" : "ok";
     return (
-        <span className={"gauge-mini " + level} title={`CPU ${fmtPct(st.cpuPercent)} · 内存 ${fmtPct(st.memPercent)} · 磁盘 ${fmtPct(st.diskPercent)}`}>
+        <span className={"gauge-mini " + level} title={t("sidebar.statsTitle", { cpu: fmtPct(st.cpuPercent), mem: fmtPct(st.memPercent), disk: fmtPct(st.diskPercent) })}>
             <span className="gauge-bar" style={{ width: Math.min(100, Math.max(2, st.cpuPercent || 0)) + "%" }} />
         </span>
     );
