@@ -127,6 +127,22 @@ frontend/src/
 
 > 改完前端跑 `cd frontend && bun run build` 刷新 `web/`，或直接用 `./run.sh`。
 
+### 前端启动自检（headless）
+
+```bash
+cd frontend && bun run smoke
+```
+
+它在 jsdom 里把真实的 `AppProvider` + `App` 挂载一遍（用一个假 WebSocket 回应启动时的
+RPC），只断言「能真的渲染出来」。用途是拦住「打开就黑屏」那类问题：渲染期抛异常会让
+React 的首次渲染直接中止，窗口里就只剩背景色。两个真实例子：
+
+- 依赖数组引用了后面才声明的 `const`（`useEffect(cb, [x])` 的 `x` 在渲染时就要求值，
+  声明在下方会抛 TDZ `ReferenceError`）；
+- 组件在合并时被嵌进了另一个函数的作围（引用处报 `X is not defined`）。
+
+这两种都是**合法 JS**，所以 `vite build` 不会报，只有真烤渲染才看得见。
+
 ### Windows（.exe）
 
 Windows 版依赖 WebView2 Runtime（Win10/11 自带），交叉编译需要 mingw 工具链：

@@ -168,6 +168,20 @@ export function AppProvider({ children }) {
         setSettings((s) => ({ ...s, fontSize: DEFAULT_FONT_SIZE }));
     }, []);
 
+    // refreshAIStatus loads whether a reasoning provider is configured. It is
+    // defined up here, before the effects that depend on it: a useEffect
+    // dependency array is evaluated during render, so referencing a const
+    // declared further down would throw a TDZ ReferenceError and leave the
+    // window blank.
+    const refreshAIStatus = useCallback(async () => {
+        try {
+            const st = await rpc.call("ai.status");
+            setAiStatus(st || { configured: false });
+        } catch {
+            setAiStatus({ configured: false });
+        }
+    }, []);
+
     // Persist font zoom after the user stops pressing the keys.
     useEffect(() => {
         if (!ready) return undefined;
@@ -397,15 +411,6 @@ export function AppProvider({ children }) {
 
     const toggleReason = useCallback(() => setReasonOpen((v) => !v), []);
     const openReason = useCallback(() => setReasonOpen(true), []);
-
-    const refreshAIStatus = useCallback(async () => {
-        try {
-            const st = await rpc.call("ai.status");
-            setAiStatus(st || { configured: false });
-        } catch {
-            setAiStatus({ configured: false });
-        }
-    }, []);
 
     // askAI starts a streaming request and binds its deltas to a new card. It
     // resolves with { requestId, kind } so the caller can await the final result

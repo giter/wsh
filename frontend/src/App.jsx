@@ -48,7 +48,6 @@ function isTextInputFocused() {
 // left (Xshell style). The manager can be collapsed with its ✕ button and
 // brought back from the menu bar or Ctrl+1; the other tools live in windows of
 // their own so they never crowd the sessions.
-function SessionWindow() {
 // ReasonPaneHost renders the third column once a session is open, or a slim
 // strip that brings it back after it is collapsed.
 function ReasonPaneHost() {
@@ -63,6 +62,12 @@ function ReasonPaneHost() {
     }
     return <ReasonPane tabId={app.activeTab} />;
 }
+
+// SessionWindow holds the terminal tabs, with the session manager docked on the
+// left (Xshell style). The manager can be collapsed with its ✕ button and
+// brought back from the menu bar or Ctrl+1; the other tools live in windows of
+// their own so they never crowd the sessions.
+function SessionWindow() {
     const app = useApp();
 
     // Keyboard accelerators for the menu. Matching uses e.code so it is layout
