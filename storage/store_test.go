@@ -161,3 +161,58 @@ func TestMoveConnectionSurvivesReload(t *testing.T) {
 		t.Fatalf("after reload f1 = %v, want [b]", got)
 	}
 }
+
+// TestDeleteConnectionClearsJumpReferences keeps a saved profile from pointing
+// at a bastion that no longer exists.
+func TestDeleteConnectionClearsJumpReferences(t *testing.T) {
+	s := NewMemoryStore()
+
+	bastion := &Connection{ID: "bastion", Name: "bastion", Host: "b", Port: 22, User: "u"}
+	target := &Connection{ID: "target", Name: "target", Host: "t", Port: 22, User: "u", JumpHostIDs: []string{"bastion"}}
+	other := &Connection{ID: "other", Name: "other", Host: "o", Port: 22, User: "u", JumpHostIDs: []string{"other-bastion", "bastion"}}
+
+	for _, c := range []*Connection{bastion, target, other} {
+		if err := s.AddConnection(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.DeleteConnection("bastion"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.Connection("bastion"); got != nil {
+		t.Fatalf("deleted connection should be gone, got %+v", got)
+	}
+	if got := s.Connection("target").JumpHostIDs; len(got) != 0 {
+		t.Fatalf("target should have no jump hosts left, got %v", got)
+	}
+	// Unrelated hops survive.
+	if got := s.Connection("other").JumpHostIDs; len(got) != 1 || got[0] != "other-bastion" {
+		t.Fatalf("unrelated hop was dropped: %v", got)
+	}
+}
+
+func TestMemoryStoreDoesNotPersist(t *testing.T) {
+	s := NewMemoryStore()
+	if err := s.AddConnection(&Connection{ID: "x", Name: "x", Host: "h", Port: 22, User: "u"}); err != nil {
+		t.Fatalf("an in-memory store must not try to write to disk: %v", err)
+	}
+	if err := s.UpdateSettings(Settings{Theme: "light", AIProvider: "ollama"}); err != nil {
+		t.Fatalf("UpdateSettings on an in-memory store: %v", err)
+	}
+	if got := s.Settings().AIProvider; got != "ollama" {
+		t.Fatalf("settings should still be updated in memory, got %q", got)
+	}
+}
+
+func TestSettingsDefaults(t *testing.T) {
+	s := NewMemoryStore()
+	if got := s.Settings().Theme; got != "dark" {
+		t.Fatalf("default theme = %q, want dark", got)
+	}
+	// AI is off by default: the terminal must work with no provider configured.
+	if got := s.Settings().AIProvider; got != "" {
+		t.Fatalf("AI should be unconfigured by default, got %q", got)
+	}
+}

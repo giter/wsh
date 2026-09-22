@@ -20,6 +20,7 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
         privateKeyPath: initial.privateKeyPath || "",
         keyId: initial.keyId || "",
         folderId: initial.folderId || "",
+        jumpHostIds: [...(initial.jumpHostIds || [])],
     }));
     const [status, setStatus] = useState({ msg: "", err: false });
     // Passphrase typed at the test prompt for an encrypted managed key. Kept
@@ -30,6 +31,24 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
         const value = e.target.type === "checkbox" ? e.target.checked : e.target.value;
         setForm((f) => ({ ...f, [key]: value }));
     };
+
+    // Jump hosts are stored in selection order: the first one picked is the
+    // first hop. Toggling a bastion appends or removes it.
+    const toggleJump = (id) =>
+        setForm((f) => {
+            const has = f.jumpHostIds.includes(id);
+            return {
+                ...f,
+                jumpHostIds: has ? f.jumpHostIds.filter((x) => x !== id) : [...f.jumpHostIds, id],
+            };
+        });
+
+    // Candidates exclude this connection itself (a self-hop is a cycle).
+    const jumpCandidates = app.connections.filter((c) => !editing || c.id !== conn.id);
+    const chainText = (targetName) =>
+        ["Local", ...form.jumpHostIds.map((id) => app.connections.find((c) => c.id === id)?.name || id), targetName || "Target"].join(
+            " → ",
+        );
 
     const test = async () => {
         setStatus({ msg: "测试中…", err: false });
@@ -43,6 +62,7 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
                 keyPath: form.privateKeyPath,
                 keyId: form.keyId,
                 keyPassphrase: keyPassRef.current,
+                jumpHostIds: form.jumpHostIds,
             });
             if (res && res.needPassphrase) {
                 app.openDialog({
@@ -76,6 +96,7 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
                 savePassword: form.savePassword,
                 privateKeyPath: form.privateKeyPath.trim(),
                 keyId: form.keyId,
+                jumpHostIds: form.jumpHostIds,
             });
             await app.refreshConnections();
             onSaved?.(saved);
@@ -153,6 +174,34 @@ export default function ConnectionDialog({ conn, draft, onSaved, onClose }) {
                 <span>私钥文件路径</span>
                 <input placeholder="可选：/path/to/id_rsa" value={form.privateKeyPath} onChange={set("privateKeyPath")} />
             </label>
+
+            <div className="field">
+                <span>跳板机（按选择顺序串联）</span>
+                {jumpCandidates.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 12 }}>还没有其它连接可作为跳板机</div>
+                ) : (
+                    <div className="jump-list">
+                        {jumpCandidates.map((c) => {
+                            const idx = form.jumpHostIds.indexOf(c.id);
+                            return (
+                                <label key={c.id} className="jump-item">
+                                    <input type="checkbox" checked={idx >= 0} onChange={() => toggleJump(c.id)} />
+                                    <span className="jump-order">{idx >= 0 ? idx + 1 : ""}</span>
+                                    <span className="lbl">{c.name}</span>
+                                    <span className="muted">
+                                        {c.user}@{c.host}
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                )}
+                {form.jumpHostIds.length > 0 && (
+                    <div className="jump-chain muted" title={chainText(form.name.trim() || "Target")}>
+                        {chainText(form.name.trim() || "Target")}
+                    </div>
+                )}
+            </div>
             <div className={"status-msg" + (status.err ? " err" : "")}>{status.msg}</div>
         </Modal>
     );

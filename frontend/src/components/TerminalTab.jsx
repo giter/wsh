@@ -1,9 +1,32 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { rpc } from "../lib/rpc.js";
 import { useApp } from "../state/store.jsx";
 import { base64Encode, base64Decode, triggerDownload } from "../lib/format.js";
+import SmartInput from "./SmartInput.jsx";
+
+// 终端报错特征对应的中文标题（与后端嗅探的 kind 对应）。
+const ERROR_TITLES = {
+    panic: "程序 panic",
+    segfault: "段错误",
+    oom: "内存不足 (OOM)",
+    "disk-full": "磁盘空间不足",
+    fatal: "致命错误",
+    "core-dump": "核心转储",
+    "port-in-use": "端口被占用",
+    permission: "权限不足",
+    "not-found": "命令或文件不存在",
+    connection: "连接失败",
+    denied: "认证失败",
+    timeout: "操作超时",
+    error: "错误输出",
+};
+
+function errorTitle(kind) {
+    return ERROR_TITLES[kind] || "检测到错误";
+}
 
 // xterm palettes per app theme. The terminal keeps its own (dark by default)
 // colours in dark mode; in light mode it follows the rest of the UI instead of
@@ -61,6 +84,14 @@ export default function TerminalTab({ tab, active }) {
     const [phase, setPhase] = useState("connecting"); // connecting | ready | error
     const [errorMsg, setErrorMsg] = useState("");
     const [zmodem, setZmodem] = useState(false);
+    // altScreen tracks whether a full-screen (alternate screen) app is running,
+    // which switches the Smart Input into raw passthrough.
+    const [altScreen, setAltScreen] = useState(false);
+
+    // Long-lived push handlers must not capture a stale store snapshot, so the
+    // latest app object is kept in a ref.
+    const appRef = useRef(app);
+    appRef.current = app;
 
     // Mount once: create the terminal, subscribe to its pushes and connect.
     useEffect(() => {
@@ -100,6 +131,38 @@ export default function TerminalTab({ tab, active }) {
                 term.writeln(`\r\n\x1b[90m[已接收 ${m.name}，正在保存…]\x1b[0m`);
                 triggerDownload(m.name, base64Decode(m.data || ""));
             }
+        });
+
+        // Alternate-screen transitions (vim/htop/less) drive the input mode.
+        const offMode = rpc.on("terminal.mode", (m) => {
+            if (m.sessionId !== sid) return;
+            setAltScreen(!!m.altScreen);
+        });
+
+        // An error feature in the output opens a diagnostic card on the right,
+        // and (when enabled) immediately asks the model for a root cause.
+        const offErr = rpc.on("terminal.error", (m) => {
+            if (m.sessionId !== sid) return;
+            const a = appRef.current;
+            const analyze = () => {
+                a.askAI({
+                    tabId: tab.id,
+                    sessionId: sid,
+                    kind: "diagnose",
+                    excerpt: m.excerpt,
+                    title: "根因分析 · " + errorTitle(m.kind),
+                });
+            };
+            a.pushReason({
+                tabId: tab.id,
+                kind: "error",
+                title: errorTitle(m.kind),
+                severity: m.severity,
+                excerpt: m.excerpt,
+                onAnalyze: analyze,
+            });
+            a.openReason();
+            if (a.aiStatus?.configured && a.aiStatus?.autoAnalyze) analyze();
         });
 
         const onResize = term.onResize(({ cols, rows }) => {
@@ -166,6 +229,16 @@ export default function TerminalTab({ tab, active }) {
                         opened = true;
                         term.loadAddon(fit);
                         term.open(wrap);
+                        // Hardware acceleration for heavy log output; fall back to
+                        // the default canvas renderer where WebGL is unavailable
+                        // (some WebView2/WebKitGTK setups) rather than going blank.
+                        try {
+                            const webgl = new WebglAddon();
+                            webgl.onContextLoss(() => webgl.dispose());
+                            term.loadAddon(webgl);
+                        } catch {
+                            /* canvas renderer stays active */
+                        }
                     }
                     try {
                         fit.fit();
@@ -199,6 +272,8 @@ export default function TerminalTab({ tab, active }) {
             offZSend();
             offZDownload();
             offZRecv();
+            offMode();
+            offErr();
             term.dispose();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -212,6 +287,12 @@ export default function TerminalTab({ tab, active }) {
         if (!term) return;
         term.options.theme = termThemeFor(themeName);
     }, [themeName, phase]);
+
+    // Closing a tab drops the reasoning cards that belonged to it.
+    useEffect(() => {
+        return () => app.clearReason(tab.id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab.id]);
 
     // Fit and focus when this tab becomes visible. Hidden tabs have no size, so
     // fitting must not run while inactive.
@@ -252,6 +333,15 @@ export default function TerminalTab({ tab, active }) {
                 </div>
             )}
             {zmodem && <ZmodemBar sessionId={sessionRef.current} onDismiss={() => setZmodem(false)} term={termRef.current} />}
+            {phase === "ready" && (
+                <SmartInput
+                    tabId={tab.id}
+                    sessionId={sessionRef.current}
+                    title={tab.title}
+                    altScreen={altScreen}
+                    onFocusTerminal={() => termRef.current?.focus()}
+                />
+            )}
         </>
     );
 }

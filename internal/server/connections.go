@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"golang.org/x/crypto/ssh"
+
 	sshclient "sshclient/ssh"
 	"sshclient/storage"
 )
@@ -12,18 +14,19 @@ import (
 // connView is the connection shape sent to the browser. It never carries the
 // stored ciphertext; hasPassword lets the UI show whether a password exists.
 type connView struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Host           string `json:"host"`
-	Port           int    `json:"port"`
-	User           string `json:"user"`
-	FolderID       string `json:"folderId"`
-	Order          int    `json:"order"`
-	SavePassword   bool   `json:"savePassword"`
-	HasPassword    bool   `json:"hasPassword"`
-	PrivateKeyPath string `json:"privateKeyPath"`
-	KeyID          string `json:"keyId"`
-	Color          string `json:"color"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Host           string   `json:"host"`
+	Port           int      `json:"port"`
+	User           string   `json:"user"`
+	FolderID       string   `json:"folderId"`
+	Order          int      `json:"order"`
+	SavePassword   bool     `json:"savePassword"`
+	HasPassword    bool     `json:"hasPassword"`
+	PrivateKeyPath string   `json:"privateKeyPath"`
+	KeyID          string   `json:"keyId"`
+	Color          string   `json:"color"`
+	JumpHostIDs    []string `json:"jumpHostIds"`
 }
 
 func toConnView(c *storage.Connection) connView {
@@ -40,20 +43,48 @@ func toConnView(c *storage.Connection) connView {
 		PrivateKeyPath: c.PrivateKeyPath,
 		KeyID:          c.KeyID,
 		Color:          c.Color,
+		JumpHostIDs:    c.JumpHostIDs,
 	}
 }
 
 type saveConnParams struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Host           string `json:"host"`
-	Port           int    `json:"port"`
-	User           string `json:"user"`
-	FolderID       string `json:"folderId"`
-	Password       string `json:"password"`
-	SavePassword   bool   `json:"savePassword"`
-	PrivateKeyPath string `json:"privateKeyPath"`
-	KeyID          string `json:"keyId"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Host           string   `json:"host"`
+	Port           int      `json:"port"`
+	User           string   `json:"user"`
+	FolderID       string   `json:"folderId"`
+	Password       string   `json:"password"`
+	SavePassword   bool     `json:"savePassword"`
+	PrivateKeyPath string   `json:"privateKeyPath"`
+	KeyID          string   `json:"keyId"`
+	JumpHostIDs    []string `json:"jumpHostIds"`
+}
+
+// cleanJumpHosts validates a requested bastion chain: every entry must exist,
+// must not be the connection itself and must not repeat. Unknown entries are
+// dropped rather than failing the save, so a deleted bastion cannot block an
+// unrelated edit.
+func (s *Server) cleanJumpHosts(selfID string, ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	if selfID != "" {
+		seen[selfID] = true
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
+		}
+		if s.store.Connection(id) == nil {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func (s *Server) handleListConnections(c *wsClient, params json.RawMessage) (interface{}, error) {
@@ -99,6 +130,7 @@ func (s *Server) handleSaveConnection(c *wsClient, params json.RawMessage) (inte
 			PrivateKeyPath:    p.PrivateKeyPath,
 			KeyID:             p.KeyID,
 			Color:             "#34D399",
+			JumpHostIDs:       s.cleanJumpHosts("", p.JumpHostIDs),
 		}
 		if err := s.store.AddConnection(conn); err != nil {
 			return nil, err
@@ -129,9 +161,12 @@ func (s *Server) handleSaveConnection(c *wsClient, params json.RawMessage) (inte
 	existing.SavePassword = p.SavePassword
 	existing.PrivateKeyPath = p.PrivateKeyPath
 	existing.KeyID = p.KeyID
+	existing.JumpHostIDs = s.cleanJumpHosts(existing.ID, p.JumpHostIDs)
 	if err := s.store.UpdateConnection(existing); err != nil {
 		return nil, err
 	}
+	// The dial parameters may have changed, so drop any live client.
+	s.pool.Drop(existing.ID)
 	return toConnView(existing), nil
 }
 
@@ -152,16 +187,18 @@ func (s *Server) handleDeleteConnection(c *wsClient, params json.RawMessage) (in
 }
 
 func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (interface{}, error) {
-	var p struct {
-		ID            string `json:"id"`
-		Host          string `json:"host"`
-		Port          int    `json:"port"`
-		User          string `json:"user"`
-		Password      string `json:"password"`
-		KeyPath       string `json:"keyPath"`
-		KeyID         string `json:"keyId"`
-		KeyPassphrase string `json:"keyPassphrase"`
+	type testConnParams struct {
+		ID            string   `json:"id"`
+		Host          string   `json:"host"`
+		Port          int      `json:"port"`
+		User          string   `json:"user"`
+		Password      string   `json:"password"`
+		KeyPath       string   `json:"keyPath"`
+		KeyID         string   `json:"keyId"`
+		KeyPassphrase string   `json:"keyPassphrase"`
+		JumpHostIDs   []string `json:"jumpHostIds"`
 	}
+	var p testConnParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
@@ -174,6 +211,7 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 		User:           p.User,
 		PrivateKeyPath: p.KeyPath,
 		KeyID:          p.KeyID,
+		JumpHostIDs:    s.cleanJumpHosts(p.ID, p.JumpHostIDs),
 	}
 	// If editing an existing connection and no password given, fall back to
 	// the stored one so the test works without re-typing.
@@ -191,7 +229,7 @@ func (s *Server) handleTestConnection(c *wsClient, params json.RawMessage) (inte
 		}
 		return pem, pass, err
 	}
-	client, err := sshclient.Dial(conn, p.Password, resolve)
+	client, err := s.dialForTest(conn, p.Password, resolve)
 	if err != nil {
 		var pe *sshclient.PassphraseError
 		if errors.As(err, &pe) {
@@ -281,4 +319,17 @@ func (s *Server) findConnection(id string) (*storage.Connection, error) {
 		}
 	}
 	return nil, fmt.Errorf("连接不存在")
+}
+
+// dialForTest opens a connection the way the terminal would, including any
+// jump-host chain, so "测试连接" validates the whole path.
+func (s *Server) dialForTest(conn *storage.Connection, password string, resolve sshclient.KeyResolver) (*ssh.Client, error) {
+	chain, err := sshclient.JumpChain(conn, s.store.Connection)
+	if err != nil {
+		return nil, err
+	}
+	if len(chain) > 0 {
+		return sshclient.DialChain(chain, conn, password, resolve)
+	}
+	return sshclient.Dial(conn, password, resolve)
 }

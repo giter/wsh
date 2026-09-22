@@ -31,6 +31,13 @@ type Server struct {
 	sessionsMu sync.Mutex
 	sessions   map[string]*WebSession
 
+	// confirms holds one-shot approval tokens for yellow-zone commands
+	// (see safety.go).
+	confirms *confirmStore
+
+	// probes samples host resources while sessions are open (see probe.go).
+	probes *probeManager
+
 	clientsMu sync.Mutex
 	clients   map[*wsClient]struct{}
 
@@ -45,11 +52,13 @@ func NewServer(store *storage.Store, pool *sshclient.Pool, tm *sshclient.TunnelM
 		tunnels:  tm,
 		web:      web,
 		sessions: make(map[string]*WebSession),
+		confirms: newConfirmStore(),
 		clients:  make(map[*wsClient]struct{}),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+	s.probes = newProbeManager(s)
 	return s
 }
 
@@ -125,6 +134,11 @@ func (s *Server) Close() {
 	s.tunnels.StopAll()
 	s.pool.CloseAll()
 	_ = s.store.Save()
+}
+
+// handleProbeSnapshot returns the most recent resource sample per connection.
+func (s *Server) handleProbeSnapshot(c *wsClient, params json.RawMessage) (interface{}, error) {
+	return s.probes.snapshot(), nil
 }
 
 // ---- WebSocket protocol ----

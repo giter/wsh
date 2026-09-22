@@ -16,7 +16,7 @@ import (
 
 func newTestServer(web fs.FS) *Server {
 	pool := sshclient.NewPool(nil)
-	return NewServer(&storage.Store{}, pool, sshclient.NewTunnelManager(pool), web)
+	return NewServer(storage.NewMemoryStore(), pool, sshclient.NewTunnelManager(pool), web)
 }
 
 // TestServesBuiltFrontend checks that the embedded frontend is wired up the way

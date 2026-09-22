@@ -10,6 +10,7 @@ import TunnelsPage from "./components/TunnelsPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import KeysPage from "./components/KeysPage.jsx";
 import DialogHost from "./components/DialogHost.jsx";
+import ReasonPane from "./components/ReasonPane.jsx";
 
 // WINDOW_ROUTES maps the "?win=" value of a dedicated window to the page it
 // renders. File transfer, tunnels and the configuration pages each run in their
@@ -48,6 +49,20 @@ function isTextInputFocused() {
 // brought back from the menu bar or Ctrl+1; the other tools live in windows of
 // their own so they never crowd the sessions.
 function SessionWindow() {
+// ReasonPaneHost renders the third column once a session is open, or a slim
+// strip that brings it back after it is collapsed.
+function ReasonPaneHost() {
+    const app = useApp();
+    if (!app.tabs.length || !app.activeTab) return null;
+    if (!app.reasonOpen) {
+        return (
+            <button id="reason-reopen" onClick={app.toggleReason} title="打开 AI 推理窗格">
+                AI
+            </button>
+        );
+    }
+    return <ReasonPane tabId={app.activeTab} />;
+}
     const app = useApp();
 
     // Keyboard accelerators for the menu. Matching uses e.code so it is layout
@@ -193,6 +208,7 @@ export default function App() {
                 <div id="app-body">
                     {!route && app.sessionManagerOpen && <Sidebar />}
                     <main id="main">{content}</main>
+                    {!route && <ReasonPaneHost />}
                 </div>
             </div>
             <DialogHost />

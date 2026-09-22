@@ -87,6 +87,24 @@ export function AppProvider({ children }) {
     // XShell it can be collapsed and brought back (title bar button / Ctrl+1).
     const [sessionManagerOpen, setSessionManagerOpen] = useState(true);
 
+    // ---- Reasoning pane (CoT / RCA / dry-run) ----
+    // Cards are tagged with the tab that produced them, so the pane always shows
+    // the reasoning for the session on screen.
+    const [reason, setReason] = useState([]);
+    const [reasonOpen, setReasonOpen] = useState(true);
+    // draft is text another component wants to place into the Smart Input
+    // (the "一键修复" action on a card).
+    const [draft, setDraft] = useState(null);
+    // pendingConfirm holds a yellow-zone command awaiting approval.
+    const [pendingConfirm, setPendingConfirm] = useState(null);
+    const [aiStatus, setAiStatus] = useState({ configured: false });
+    // Host resource samples, keyed by connection ID (see probe.go).
+    const [stats, setStats] = useState({});
+
+    const reasonSeq = useRef(0);
+    // Maps an in-flight AI request to the reasoning card it updates.
+    const aiRequests = useRef(new Map());
+
     const settingsRef = useRef(settings);
     settingsRef.current = settings;
     const connectionsRef = useRef(connections);
@@ -164,6 +182,13 @@ export function AppProvider({ children }) {
                 defaultUser: st.defaultUser || "",
                 tunnelLocalPort: st.tunnelLocalPort || 0,
                 tunnelRemotePort: st.tunnelRemotePort || 0,
+                // AI options are carried through unchanged: settings.save
+                // replaces the whole record, so omitting them would wipe them.
+                aiProvider: st.aiProvider || "",
+                aiBaseUrl: st.aiBaseUrl || "",
+                aiModel: st.aiModel || "",
+                aiAutoAnalyze: !!st.aiAutoAnalyze,
+                aiNoContext: !!st.aiNoContext,
             })
                 .then((saved) => {
                     persistedFontSize.current = parseInt(saved?.fontSize, 10) || 0;
@@ -177,6 +202,7 @@ export function AppProvider({ children }) {
     useEffect(() => {
         const off1 = rpc.on("ui.settings-changed", () => {
             loadSettings().catch(() => {});
+            refreshAIStatus().catch(() => {});
         });
         const off2 = rpc.on("ui.keys-changed", () => {
             refreshConnections().catch(() => {});
@@ -189,7 +215,7 @@ export function AppProvider({ children }) {
             off2();
             off3();
         };
-    }, [loadSettings, refreshConnections]);
+    }, [loadSettings, refreshConnections, refreshAIStatus]);
 
     useEffect(() => {
         applySettings(settings);
@@ -206,13 +232,17 @@ export function AppProvider({ children }) {
                 return;
             }
             if (cancelled) return;
-            await Promise.all([loadSettings(), refreshConnections().catch(() => {})]);
+            await Promise.all([
+                loadSettings(),
+                refreshConnections().catch(() => {}),
+                refreshAIStatus().catch(() => {}),
+            ]);
             if (!cancelled) setReady(true);
         })();
         return () => {
             cancelled = true;
         };
-    }, [loadSettings, refreshConnections]);
+    }, [loadSettings, refreshConnections, refreshAIStatus]);
 
     // ---- Tabs (session window only) ----
 
@@ -348,6 +378,112 @@ export function AppProvider({ children }) {
     const openDialog = useCallback((d) => setDialog(d), []);
     const closeDialog = useCallback(() => setDialog(null), []);
 
+    // ---- Reasoning pane ----
+
+    const pushReason = useCallback((item) => {
+        const id = `r${++reasonSeq.current}`;
+        // Keep the list bounded: the pane is a working surface, not a log.
+        setReason((rs) => [...rs, { id, ...item }].slice(-80));
+        return id;
+    }, []);
+
+    const updateReason = useCallback((id, patch) => {
+        setReason((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    }, []);
+
+    const clearReason = useCallback((tabId) => {
+        setReason((rs) => (tabId ? rs.filter((r) => r.tabId !== tabId) : []));
+    }, []);
+
+    const toggleReason = useCallback(() => setReasonOpen((v) => !v), []);
+    const openReason = useCallback(() => setReasonOpen(true), []);
+
+    const refreshAIStatus = useCallback(async () => {
+        try {
+            const st = await rpc.call("ai.status");
+            setAiStatus(st || { configured: false });
+        } catch {
+            setAiStatus({ configured: false });
+        }
+    }, []);
+
+    // askAI starts a streaming request and binds its deltas to a new card. It
+    // resolves with { requestId, kind } so the caller can await the final result
+    // (the Smart Input uses that to build its command preview).
+    const askAI = useCallback(
+        ({ tabId, sessionId, kind, prompt, excerpt, title }) => {
+            const id = pushReason({
+                tabId,
+                kind: "cot",
+                title: title || "AI 推理",
+                status: "streaming",
+                text: "",
+                steps: [],
+            });
+            return rpc.call("ai.ask", { sessionId, kind, prompt, excerpt }).then(
+                (res) => {
+                    if (res && res.requestId) aiRequests.current.set(res.requestId, id);
+                    return { ...res, cardId: id };
+                },
+                (e) => {
+                    updateReason(id, { status: "error", text: e.message || String(e) });
+                    throw e;
+                },
+            );
+        },
+        [pushReason, updateReason],
+    );
+
+    // Host samples arrive while sessions are open; the snapshot covers a window
+    // that was just reloaded.
+    useEffect(() => {
+        const off = rpc.on("host.stats", (m) => {
+            const st = m.stats;
+            if (!st || !st.connId) return;
+            setStats((s) => ({ ...s, [st.connId]: st }));
+        });
+        rpc.call("probes.snapshot")
+            .then((snap) => {
+                if (snap && Object.keys(snap).length) setStats((s) => ({ ...snap, ...s }));
+            })
+            .catch(() => {});
+        return off;
+    }, []);
+
+    // AI pushes are correlated by requestId, so several requests can be in
+    // flight (e.g. a diagnosis while a command is being generated).
+    useEffect(() => {
+        const offDelta = rpc.on("ai.delta", (m) => {
+            const id = aiRequests.current.get(m.requestId);
+            if (!id) return;
+            const text = m.text || "";
+            setReason((rs) => rs.map((r) => (r.id === id ? { ...r, text: (r.text || "") + text } : r)));
+        });
+        const offDone = rpc.on("ai.done", (m) => {
+            const id = aiRequests.current.get(m.requestId);
+            if (!id) return;
+            aiRequests.current.delete(m.requestId);
+            setReason((rs) =>
+                rs.map((r) =>
+                    r.id === id
+                        ? {
+                              ...r,
+                              status: m.ok ? "done" : "error",
+                              text: m.ok ? m.text || r.text : m.error || "AI 请求失败",
+                              steps: m.steps || [],
+                              command: m.command || "",
+                              risk: m.risk || null,
+                          }
+                        : r,
+                ),
+            );
+        });
+        return () => {
+            offDelta();
+            offDone();
+        };
+    }, []);
+
     // appAction asks the desktop shell for a native action (open another
     // window, quit, DevTools). Surfaces a dialog when unavailable (headless).
     // "sessions" and "new-connection" are handled here: the session manager is
@@ -400,6 +536,21 @@ export function AppProvider({ children }) {
             openDialog,
             closeDialog,
             appAction,
+            reason,
+            reasonOpen,
+            toggleReason,
+            openReason,
+            pushReason,
+            updateReason,
+            clearReason,
+            draft,
+            setDraft,
+            pendingConfirm,
+            setPendingConfirm,
+            aiStatus,
+            askAI,
+            refreshAIStatus,
+            stats,
         }),
         [
             ready,
@@ -429,6 +580,19 @@ export function AppProvider({ children }) {
             openDialog,
             closeDialog,
             appAction,
+            reason,
+            reasonOpen,
+            toggleReason,
+            openReason,
+            pushReason,
+            updateReason,
+            clearReason,
+            draft,
+            pendingConfirm,
+            aiStatus,
+            askAI,
+            refreshAIStatus,
+            stats,
         ],
     );
 

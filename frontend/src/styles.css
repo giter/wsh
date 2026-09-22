@@ -820,3 +820,206 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, "Cascadi
 .about .about-logo .logo-dot { width: 16px; height: 16px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), var(--blue)); }
 .about .about-title { font-size: 17px; font-weight: 700; letter-spacing: .4px; }
 .about .about-desc { color: var(--dim); font-size: 12px; margin-top: 8px; line-height: 1.7; }
+
+/* ---------- AI reasoning pane (third column) ---------- */
+#reason-pane {
+  width: 340px;
+  flex: 0 0 340px;
+  background: var(--sidebar);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#reason-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+#reason-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Collapsed state: a slim strip that brings the pane back. */
+#reason-reopen {
+  flex: 0 0 26px;
+  width: 26px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 1px;
+  writing-mode: vertical-rl;
+}
+#reason-reopen:hover { background: var(--panel-hi); color: var(--text); }
+
+.reason-empty { color: var(--dim); font-size: 12px; line-height: 1.7; padding: 10px 6px; }
+.reason-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.reason-card.dry-run { border-color: var(--warn); }
+.reason-card.blocked { border-color: rgba(244, 63, 94, .5); }
+.rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rc-head.clickable { cursor: pointer; }
+.rc-title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-text { color: var(--dim); line-height: 1.6; }
+.rc-cmd, .rc-excerpt, .rc-stream {
+  display: block;
+  background: #111118;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.rc-excerpt, .rc-stream { max-height: 180px; overflow: auto; color: var(--dim); }
+.rc-steps { list-style: none; display: flex; flex-direction: column; gap: 4px; color: var(--dim); line-height: 1.6; }
+.rc-step-label { color: var(--accent); font-family: ui-monospace, monospace; }
+.rc-findings { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.rc-findings li { display: flex; gap: 6px; align-items: flex-start; color: var(--dim); }
+.rc-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+.rc-generated { margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.rc-generated-head { display: flex; align-items: center; justify-content: space-between; color: var(--dim); margin-bottom: 4px; }
+
+.risk-pill, .sev-pill { font-size: 10.5px; padding: 1px 6px; border-radius: 9px; white-space: nowrap; flex: 0 0 auto; }
+.risk-pill.level-safe { background: rgba(52, 211, 153, .16); color: var(--accent); }
+.risk-pill.level-caution { background: rgba(251, 191, 80, .16); color: var(--warn); }
+.risk-pill.level-blocked { background: rgba(244, 63, 94, .16); color: var(--danger); }
+.sev-pill.sev-high { background: rgba(244, 63, 94, .16); color: var(--danger); }
+.sev-pill.sev-medium { background: rgba(251, 191, 80, .16); color: var(--warn); }
+.sev-pill.sev-low { background: var(--panel-hi); color: var(--dim); }
+
+/* ---------- Smart Input (bottom bar) ---------- */
+#smart-input {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--sidebar);
+  padding: 6px 10px 8px;
+}
+#smart-input .si-row { display: flex; align-items: center; gap: 8px; }
+.si-prompt { color: var(--accent); font-family: ui-monospace, monospace; }
+.si-field {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.si-field:focus { outline: none; border-color: var(--accent); }
+/* Risk highlighting: a dangerous command is visible before Enter is pressed. */
+#smart-input.level-caution .si-field { border-color: var(--warn); }
+#smart-input.level-blocked .si-field { border-color: var(--danger); background: rgba(244, 63, 94, .08); }
+.si-mode { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--dim); padding: 4px 6px; }
+.si-lock { font-size: 11px; color: var(--faint); white-space: nowrap; }
+.si-lock.level-safe { color: var(--accent); }
+.si-lock.level-caution { color: var(--warn); }
+.si-lock.level-blocked { color: var(--danger); }
+.si-hint { font-size: 11.5px; margin-top: 4px; padding-left: 20px; color: var(--dim); }
+.si-hint.level-caution { color: var(--warn); }
+.si-hint.level-blocked { color: var(--danger); }
+.si-preview { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 8px 10px; }
+.si-preview-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--dim); }
+.si-preview-cmd {
+  display: block;
+  margin: 6px 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--accent-2);
+  background: #111118;
+  border-radius: 5px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.si-preview-actions { display: flex; align-items: center; gap: 8px; }
+.si-preview-actions .muted { flex: 1; }
+.si-note { font-size: 11.5px; margin-top: 4px; padding-left: 20px; }
+.si-note.err { color: var(--danger); }
+#smart-input.alt-passthrough { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 12px; }
+.mode-pill { background: rgba(96, 165, 250, .16); color: var(--blue); font-size: 10.5px; padding: 1px 7px; border-radius: 9px; }
+.spinner.small { width: 12px; height: 12px; border-width: 2px; margin: 0; flex: 0 0 12px; }
+.grow { flex: 1; }
+.muted { color: var(--dim); }
+
+/* ---------- Jump host picker (connection editor) ---------- */
+.jump-list {
+  max-height: 132px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.jump-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.jump-item:last-child { border-bottom: none; }
+.jump-item:hover { background: var(--panel); }
+.jump-item .lbl { flex: 0 0 auto; font-weight: 600; }
+.jump-item .jump-order {
+  flex: 0 0 16px;
+  text-align: center;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+}
+.jump-chain {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Host resource gauges (sidebar) ---------- */
+.gauge-mini {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  display: inline-block;
+}
+.gauge-mini .gauge-bar { display: block; height: 100%; background: var(--accent); }
+.gauge-mini.warn .gauge-bar { background: var(--warn); }
+.gauge-mini.high .gauge-bar { background: var(--danger); }
+.gauge-mini.err {
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 5px;
+  text-align: center;
+  background: transparent;
+}
+.det-stats { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.gauge { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); }
+.gauge-label { flex: 0 0 34px; }
+.gauge-track { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.gauge-fill { display: block; height: 100%; background: var(--accent); }
+.gauge-fill.warn { background: var(--warn); }
+.gauge-fill.high { background: var(--danger); }
+.gauge-value { flex: 0 0 34px; text-align: right; font-family: ui-monospace, monospace; }

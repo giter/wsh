@@ -35,6 +35,9 @@ func main() {
 		store = &storage.Store{}
 	}
 	pool := ssh.NewPool(store.KeyMaterial)
+	// Let the pool resolve jump-host IDs to saved profiles, so a connection can
+	// be reached through a bastion chain (Local -> Bastion -> Target).
+	pool.SetJumpResolver(store.Connection)
 	tm := ssh.NewTunnelManager(pool)
 
 	// Bind to a localhost port so nothing conflicts and the service is only

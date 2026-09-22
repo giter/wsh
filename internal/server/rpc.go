@@ -39,8 +39,20 @@ var router = map[string]handler{
 	// terminals
 	"terminal.open":   (*Server).handleOpenTerminal,
 	"terminal.input":  (*Server).handleTerminalInput,
+	"terminal.exec":   (*Server).handleTerminalExec,
 	"terminal.resize": (*Server).handleTerminalResize,
 	"terminal.close":  (*Server).handleTerminalClose,
+
+	// local command safety engine (AST based, see internal/safety)
+	"safety.check":   (*Server).handleSafetyCheck,
+	"safety.confirm": (*Server).handleSafetyConfirm,
+
+	// host resource probe (see probe.go)
+	"probes.snapshot": (*Server).handleProbeSnapshot,
+
+	// AI reasoning (advisory only, see internal/ai)
+	"ai.status": (*Server).handleAIStatus,
+	"ai.ask":    (*Server).handleAIAsk,
 
 	// zmodem (lrzsz) — chunked upload (sendBegin/sendChunk/sendEnd)
 	"zmodem.sendBegin": (*Server).handleZmodemSendBegin,

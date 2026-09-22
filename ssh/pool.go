@@ -21,6 +21,9 @@ type Pool struct {
 	// freshly entered passphrase can replace a stale saved one.
 	passphrases map[string]string
 	keys        KeyResolver // resolves managed keys for key auth
+	// jumps resolves a connection ID to a saved profile, used to build a
+	// bastion chain. Nil disables jump hosts.
+	jumps ConnectionLookup
 }
 
 // NewPool returns an empty pool. keys resolves managed key IDs to decrypted
@@ -33,6 +36,14 @@ func NewPool(keys KeyResolver) *Pool {
 		passphrases: make(map[string]string),
 		keys:        keys,
 	}
+}
+
+// SetJumpResolver installs the lookup used to resolve jump-host IDs. Passing
+// nil (the default) makes every connection dial directly.
+func (p *Pool) SetJumpResolver(lookup ConnectionLookup) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jumps = lookup
 }
 
 // ProvidePassword records a freshly entered password for a connection ID so
@@ -97,7 +108,30 @@ func (p *Pool) Get(c *storage.Connection, password *string) (*ssh.Client, error)
 		} else if saved, ok := p.pass[c.ID]; ok {
 			pw = saved
 		}
-		client, err = Dial(c, pw, p.resolveKey)
+		p.mu.Lock()
+		jumps := p.jumps
+		p.mu.Unlock()
+
+		// A jump-host chain is validated before dialing so a cycle or a
+		// missing bastion surfaces as a clear error rather than a timeout.
+		var chain []*storage.Connection
+		if len(c.JumpHostIDs) > 0 {
+			var cerr error
+			chain, cerr = JumpChain(c, jumps)
+			if cerr != nil {
+				err = cerr
+				p.mu.Lock()
+				delete(p.dials, c.ID)
+				p.mu.Unlock()
+				return
+			}
+		}
+
+		if len(chain) > 0 {
+			client, err = DialChain(chain, c, pw, p.resolveKey)
+		} else {
+			client, err = Dial(c, pw, p.resolveKey)
+		}
 		if err != nil {
 			// Reset the gate so a later attempt (e.g. with the right password)
 			// can try again instead of being stuck on the failure.

@@ -86,6 +86,12 @@ func LoadStore(path string) (*Store, error) {
 	return s, nil
 }
 
+// NewMemoryStore returns a store that never touches the disk. It is used by
+// tests and by callers that only need in-process state.
+func NewMemoryStore() *Store {
+	return &Store{settings: defaultSettings()}
+}
+
 // defaultSettings returns the settings used when no settings.json exists.
 func defaultSettings() Settings {
 	return Settings{Theme: "dark"}
@@ -123,6 +129,10 @@ func (s *Store) Settings() Settings { return s.settings }
 // UpdateSettings persists the given global options to settings.json.
 func (s *Store) UpdateSettings(st Settings) error {
 	s.settings = st
+	if s.path == "" {
+		// In-memory store: nothing is persisted.
+		return nil
+	}
 	path, err := settingsFile()
 	if err != nil {
 		return err
@@ -134,9 +144,14 @@ func (s *Store) UpdateSettings(st Settings) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// Save writes state to disk when something changed.
+// Save writes state to disk when something changed. A store without a path is
+// in-memory (see NewMemoryStore) and only clears the dirty flag.
 func (s *Store) Save() error {
 	if !s.dirty {
+		return nil
+	}
+	if s.path == "" {
+		s.dirty = false
 		return nil
 	}
 	type disk struct {
@@ -168,6 +183,17 @@ func (s *Store) Connections() []*Connection {
 	return out
 }
 
+// Connection returns the saved connection with the given ID, or nil when it does
+// not exist. It satisfies the resolver used for jump hosts.
+func (s *Store) Connection(id string) *Connection {
+	for _, c := range s.connections {
+		if c.ID == id {
+			return c
+		}
+	}
+	return nil
+}
+
 // AddConnection inserts a new connection and persists.
 func (s *Store) AddConnection(c *Connection) error {
 	s.connections = append(s.connections, c)
@@ -187,7 +213,9 @@ func (s *Store) UpdateConnection(c *Connection) error {
 	return errors.New("connection not found")
 }
 
-// DeleteConnection removes a connection and any tunnels that depend on it.
+// DeleteConnection removes a connection and any tunnels that depend on it. It
+// also drops the connection from every jump-host chain, so no saved profile is
+// left pointing at a missing bastion.
 func (s *Store) DeleteConnection(id string) error {
 	kept := s.connections[:0]
 	for _, c := range s.connections {
@@ -196,6 +224,19 @@ func (s *Store) DeleteConnection(id string) error {
 		}
 	}
 	s.connections = kept
+
+	for _, c := range s.connections {
+		if len(c.JumpHostIDs) == 0 {
+			continue
+		}
+		chain := c.JumpHostIDs[:0]
+		for _, hop := range c.JumpHostIDs {
+			if hop != id {
+				chain = append(chain, hop)
+			}
+		}
+		c.JumpHostIDs = chain
+	}
 
 	tunnels := s.tunnels[:0]
 	for _, t := range s.tunnels {

@@ -7,6 +7,7 @@ require (
 	github.com/pkg/sftp v1.13.11
 	github.com/wailsapp/wails/v3 v3.0.0-beta.20
 	golang.org/x/crypto v0.57.0
+	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (

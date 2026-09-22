@@ -343,6 +343,7 @@ export default function Sidebar() {
                 <ServerIcon />
             </span>
             <span className="lbl">{c.name}</span>
+            <StatsGauge st={app.stats[c.id]} />
         </div>
     );
 
@@ -497,6 +498,16 @@ export default function Sidebar() {
                     <DetailRow k="用户" v={selected.user} />
                     <DetailRow k="认证" v={authLabel(selected, app.keys)} />
                     <DetailRow k="文件夹" v={folderName(selected, app.folders)} />
+                    {selected.jumpHostIds?.length > 0 && (
+                        <DetailRow k="跳板机" v={jumpChainLabel(selected, app.connections)} />
+                    )}
+                    {app.stats[selected.id] && !app.stats[selected.id].error && (
+                        <div className="det-stats">
+                            <Gauge label="CPU" value={app.stats[selected.id].cpuPercent} />
+                            <Gauge label="内存" value={app.stats[selected.id].memPercent} />
+                            <Gauge label="磁盘" value={app.stats[selected.id].diskPercent} />
+                        </div>
+                    )}
                     <div className="det-actions">
                         <button className="btn primary small" onClick={() => app.openSession({ connId: selected.id })}>
                             连接
@@ -583,6 +594,45 @@ function DetailRow({ k, v }) {
     );
 }
 
+// StatsGauge is the compact readout shown next to a host that has an open
+// session (populated by the background probe). It stays invisible otherwise.
+function StatsGauge({ st }) {
+    if (!st) return null;
+    if (st.error) {
+        return (
+            <span className="gauge-mini err" title={st.error}>
+                !
+            </span>
+        );
+    }
+    const worst = Math.max(st.cpuPercent || 0, st.memPercent || 0, st.diskPercent || 0);
+    const level = worst >= 90 ? "high" : worst >= 70 ? "warn" : "ok";
+    return (
+        <span className={"gauge-mini " + level} title={`CPU ${fmtPct(st.cpuPercent)} · 内存 ${fmtPct(st.memPercent)} · 磁盘 ${fmtPct(st.diskPercent)}`}>
+            <span className="gauge-bar" style={{ width: Math.min(100, Math.max(2, st.cpuPercent || 0)) + "%" }} />
+        </span>
+    );
+}
+
+// Gauge is a labelled bar used in the properties pane.
+function Gauge({ label, value }) {
+    const v = Math.max(0, Math.min(100, Number(value) || 0));
+    const level = v >= 90 ? "high" : v >= 70 ? "warn" : "ok";
+    return (
+        <div className="gauge">
+            <span className="gauge-label">{label}</span>
+            <span className="gauge-track">
+                <span className={"gauge-fill " + level} style={{ width: v + "%" }} />
+            </span>
+            <span className="gauge-value">{v.toFixed(0)}%</span>
+        </div>
+    );
+}
+
+function fmtPct(v) {
+    return (Number(v) || 0).toFixed(0) + "%";
+}
+
 function authLabel(conn, keys) {
     if (conn.keyId) {
         const key = keys.find((k) => k.id === conn.keyId);
@@ -597,4 +647,10 @@ function folderName(conn, folders) {
     if (!conn.folderId) return "未分组";
     const f = folders.find((x) => x.id === conn.folderId);
     return f ? f.name : "未分组";
+}
+
+// jumpChainLabel renders the bastion path, e.g. "Local → jump-a → db-01".
+function jumpChainLabel(conn, connections) {
+    const hops = (conn.jumpHostIds || []).map((id) => connections.find((c) => c.id === id)?.name || id);
+    return ["Local", ...hops, conn.name].join(" → ");
 }

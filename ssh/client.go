@@ -32,14 +32,53 @@ func (e *PassphraseError) Error() string {
 	return "该私钥已加密，需要口令"
 }
 
-// Dial establishes an SSH client from a saved connection profile.
-// Pass a plaintext password if one should be used; it may be empty when key
-// auth (or a stored encrypted password) is preferred. Key-based auth is always
-// attempted before password auth (登录时优先使用密钥).
-func Dial(c *storage.Connection, password string, resolve KeyResolver) (*ssh.Client, error) {
+// ConnectionLookup resolves a saved connection by ID (used for jump hosts).
+type ConnectionLookup func(id string) *storage.Connection
+
+// MaxJumpHops bounds a bastion chain so a misconfiguration cannot wedge the UI.
+const MaxJumpHops = 5
+
+// dialTimeout bounds one TCP connect and one SSH handshake.
+const dialTimeout = 15 * time.Second
+
+// JumpChain resolves the ordered bastions a connection must traverse. It
+// rejects unknown IDs, self-references, cycles and overly long chains, so a bad
+// configuration is reported as such instead of turning into a dial timeout.
+func JumpChain(c *storage.Connection, lookup ConnectionLookup) ([]*storage.Connection, error) {
+	if len(c.JumpHostIDs) == 0 {
+		return nil, nil
+	}
+	if lookup == nil {
+		return nil, fmt.Errorf("跳板机信息不可用")
+	}
+	if len(c.JumpHostIDs) > MaxJumpHops {
+		return nil, fmt.Errorf("跳板机层数过多（最多 %d 层）", MaxJumpHops)
+	}
+	seen := map[string]bool{c.ID: true}
+	chain := make([]*storage.Connection, 0, len(c.JumpHostIDs))
+	for _, id := range c.JumpHostIDs {
+		if id == "" {
+			continue
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("跳板机配置存在环：%s 重复出现", id)
+		}
+		hop := lookup(id)
+		if hop == nil {
+			return nil, fmt.Errorf("跳板机不存在：%s", id)
+		}
+		seen[id] = true
+		chain = append(chain, hop)
+	}
+	return chain, nil
+}
+
+// clientConfig builds the SSH client configuration for one hop. The password
+// falls back to that hop's own stored credential, which is what makes a bastion
+// work without prompting (only the target's password is asked for).
+func clientConfig(c *storage.Connection, password string, resolve KeyResolver) (*ssh.ClientConfig, error) {
 	if password == "" && c.EncryptedPassword != "" {
-		dec, err := storage.DecryptPassword(c.EncryptedPassword)
-		if err == nil {
+		if dec, err := storage.DecryptPassword(c.EncryptedPassword); err == nil {
 			password = dec
 		}
 	}
@@ -47,7 +86,7 @@ func Dial(c *storage.Connection, password string, resolve KeyResolver) (*ssh.Cli
 	cfg := &ssh.ClientConfig{
 		User:            c.User,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // host keys are accepted on first use
-		Timeout:         15 * time.Second,
+		Timeout:         dialTimeout,
 	}
 
 	// Key auth first: both a managed key and a local identity file take
@@ -71,13 +110,79 @@ func Dial(c *storage.Connection, password string, resolve KeyResolver) (*ssh.Cli
 	if len(cfg.Auth) == 0 {
 		return nil, fmt.Errorf("no authentication method configured for %s", c.Name)
 	}
+	return cfg, nil
+}
 
+// hostPort renders a connection's dial address.
+func hostPort(c *storage.Connection) string {
 	port := c.Port
 	if port == 0 {
 		port = 22
 	}
-	addr := net.JoinHostPort(c.Host, fmt.Sprintf("%d", port))
-	return ssh.Dial("tcp", addr, cfg)
+	return net.JoinHostPort(c.Host, fmt.Sprintf("%d", port))
+}
+
+// Dial establishes an SSH client from a saved connection profile.
+// Pass a plaintext password if one should be used; it may be empty when key
+// auth (or a stored encrypted password) is preferred. Key-based auth is always
+// attempted before password auth (登录时优先使用密钥).
+func Dial(c *storage.Connection, password string, resolve KeyResolver) (*ssh.Client, error) {
+	cfg, err := clientConfig(c, password, resolve)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.Dial("tcp", hostPort(c), cfg)
+}
+
+// DialChain opens a client for target by hopping through each bastion in order
+// (Local -> Bastion A -> Bastion B -> Target). Each hop tunnels the next TCP
+// connection over the previous SSH client, which is how a multi-level jump host
+// works without configuring anything on the bastions.
+//
+// password applies to the target only; bastions must have their own stored
+// credential or a usable key.
+func DialChain(jumps []*storage.Connection, target *storage.Connection, password string, resolve KeyResolver) (*ssh.Client, error) {
+	hops := make([]*storage.Connection, 0, len(jumps)+1)
+	hops = append(hops, jumps...)
+	hops = append(hops, target)
+
+	var client *ssh.Client
+	for i, hop := range hops {
+		addr := hostPort(hop)
+
+		var conn net.Conn
+		var err error
+		if client == nil {
+			conn, err = net.DialTimeout("tcp", addr, dialTimeout)
+			if err != nil {
+				return nil, fmt.Errorf("连接 %s 失败：%w", hop.Name, err)
+			}
+		} else {
+			// Tunnel the next hop's TCP stream through the previous SSH client.
+			conn, err = client.Dial("tcp", addr)
+			if err != nil {
+				return nil, fmt.Errorf("经跳板机连接 %s 失败：%w", hop.Name, err)
+			}
+		}
+
+		pw := ""
+		if i == len(hops)-1 {
+			pw = password
+		}
+		cfg, err := clientConfig(hop, pw, resolve)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("%s：%w", hop.Name, err)
+		}
+
+		sc, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("SSH 握手失败（%s）：%w", hop.Name, err)
+		}
+		client = ssh.NewClient(sc, chans, reqs)
+	}
+	return client, nil
 }
 
 // KeyMaterial is decrypted private key material ready for authentication. ID

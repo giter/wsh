@@ -40,6 +40,18 @@ type WebSession struct {
 	// pushMsg delivers arbitrary push messages (e.g. zmodem events).
 	pushMsg func(v interface{})
 	onExit  func()
+	// onClose runs at most once when the session ends, whichever path got there
+	// first (explicit close or remote EOF). It releases the host probe.
+	onClose   func()
+	closeOnce sync.Once
+
+	// connID is the saved connection this session belongs to (empty for ad-hoc
+	// quick-connect sessions).
+	connID string
+
+	// sniff watches the rendered output for alternate-screen switches and error
+	// features, so the UI can react without parsing the terminal itself.
+	sniff *sniffer
 
 	// zmMu guards the active zmodem transfer (if any) and the upload-prompt
 	// dedup flag.
@@ -180,18 +192,24 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 
+	sid := storage.NewID()
 	ws := &WebSession{
-		id:          storage.NewID(),
+		id:          sid,
+		sniff:       newSniffer(sid),
 		client:      client,
 		sess:        sess,
 		stdin:       stdin,
 		done:        make(chan struct{}),
 		ownedClient: adhoc,
+		connID:      conn.ID,
 	}
 
 	// Bind the session to this browser connection for output and lifecycle.
 	ws.pushOutput = func(data []byte) {
 		c.send(terminalDataMsg{Type: "terminal.data", SessionID: ws.id, Data: string(data)})
+		// Tap the rendered stream for alternate-screen and error detection. The
+		// bytes themselves are already on their way to xterm.js untouched.
+		ws.sniff.feed(data, c.send)
 	}
 	ws.pushMsg = func(v interface{}) {
 		c.send(v)
@@ -200,6 +218,12 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 		c.send(terminalDataMsg{Type: "terminal.exit", SessionID: ws.id})
 		s.unregister(ws.id)
 	}
+	// The host probe runs only while at least one session is open.
+	ws.onClose = func() {
+		if !adhoc {
+			s.probes.release(conn.ID)
+		}
+	}
 
 	if err := sess.Start("$SHELL || bash"); err != nil {
 		_ = sess.Close()
@@ -207,6 +231,9 @@ func (s *Server) handleOpenTerminal(c *wsClient, params json.RawMessage) (interf
 	}
 
 	s.register(ws)
+	if !adhoc {
+		s.probes.acquire(conn.ID)
+	}
 	go ws.readLoop(stdout)
 	return map[string]interface{}{"sessionId": ws.id}, nil
 }
@@ -324,6 +351,7 @@ func (ws *WebSession) Close() {
 		_ = ws.sess.Close()
 	}
 	ws.closeOwnedClient()
+	ws.runCloseHooks()
 }
 
 func (ws *WebSession) close() {
@@ -335,6 +363,16 @@ func (ws *WebSession) close() {
 	ws.closed = true
 	ws.mu.Unlock()
 	ws.closeOwnedClient()
+	ws.runCloseHooks()
+}
+
+// runCloseHooks fires the session's cleanup callback exactly once.
+func (ws *WebSession) runCloseHooks() {
+	ws.closeOnce.Do(func() {
+		if ws.onClose != nil {
+			ws.onClose()
+		}
+	})
 }
 
 // closeOwnedClient closes the SSH client of an ad-hoc session. Pooled clients

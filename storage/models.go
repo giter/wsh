@@ -25,6 +25,10 @@ type Connection struct {
 	KeyID string `json:"key_id,omitempty"`
 	// Color is the accent color used to identify this connection in the UI.
 	Color string `json:"color"`
+	// JumpHostIDs are the bastions to traverse, in order, before this host
+	// (Local -> Bastion A -> Bastion B -> Target). Each entry references another
+	// saved connection's ID; empty means a direct connection.
+	JumpHostIDs []string `json:"jump_host_ids,omitempty"`
 }
 
 // SSHKey is a user-submitted private key kept encrypted at rest (same machine
@@ -79,6 +83,24 @@ type Settings struct {
 	TunnelLocalPort int `json:"tunnel_local_port"`
 	// TunnelRemotePort is the pre-filled remote port for new tunnels (0 => 80).
 	TunnelRemotePort int `json:"tunnel_remote_port"`
+
+	// AIProvider selects the reasoning backend ("openai" or "ollama"); empty
+	// disables every AI feature, which keeps the terminal fully usable offline.
+	AIProvider string `json:"ai_provider,omitempty"`
+	// AIBaseURL is the provider endpoint root.
+	AIBaseURL string `json:"ai_base_url,omitempty"`
+	// AIModel is the model name to request.
+	AIModel string `json:"ai_model,omitempty"`
+	// AIKeyEncrypted is the AES-GCM ciphertext (base64) of the API key, the same
+	// scheme used for connection passwords, so a copied config yields no key.
+	AIKeyEncrypted string `json:"ai_key_encrypted,omitempty"`
+	// AIAutoAnalyze runs a root-cause analysis automatically when the sniffer
+	// detects an error in the terminal output.
+	AIAutoAnalyze bool `json:"ai_auto_analyze"`
+	// AINoContext stops masked terminal context from being attached to a prompt,
+	// limiting every request to the user's own words. It is inverted on purpose:
+	// the zero value must mean "send context".
+	AINoContext bool `json:"ai_no_context"`
 }
 
 // Tunnel describes a TCP port forward over SSH.
