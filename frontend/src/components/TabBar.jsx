@@ -15,7 +15,8 @@ function isUnsavedSession(t) {
 
 export default function TabBar() {
     const app = useApp();
-    const t = useT();
+    // Bound to `tr` (not `t`): the tab map below uses `t` for each tab object.
+    const tr = useT();
     const { tabs, activeTab, selectTab, closeTab, openDialog } = app;
 
     // rename edits the session title; for a saved connection the connection's
@@ -26,8 +27,8 @@ export default function TabBar() {
         const conn = connId ? app.connections.find((c) => c.id === connId) : null;
         openDialog({
             type: "prompt",
-            title: conn ? t("tabs.renameConn") : t("tabs.renameTab"),
-            label: conn ? t("tabs.connNameLabel") : t("tabs.tabTitleLabel"),
+            title: conn ? tr("tabs.renameConn") : tr("tabs.renameTab"),
+            label: conn ? tr("tabs.connNameLabel") : tr("tabs.tabTitleLabel"),
             initial: t.title,
             onSubmit: async (name) => {
                 if (conn) await app.renameConnection(conn, name);
@@ -58,13 +59,13 @@ export default function TabBar() {
                         onClick={() => selectTab(t.id)}
                         onDoubleClick={renameable ? () => rename(t) : undefined}
                     >
-                        <span className="tab-title" title={renameable ? t("tabs.titleHint", { title: t.title }) : t.title}>
+                        <span className="tab-title" title={renameable ? tr("tabs.titleHint", { title: t.title }) : t.title}>
                             {t.title}
                         </span>
                         {isUnsavedSession(t) && (
                             <button
                                 className="tab-save"
-                                title={t("tabs.saveAsConn")}
+                                title={tr("tabs.saveAsConn")}
                                 onDoubleClick={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -86,7 +87,7 @@ export default function TabBar() {
                     </div>
                 );
             })}
-            <button className="tab-add" title={t("tabs.newConn")} onClick={() => openDialog({ type: "connection", conn: null })}>
+            <button className="tab-add" title={tr("tabs.newConn")} onClick={() => openDialog({ type: "connection", conn: null })}>
                 ＋
             </button>
         </div>
