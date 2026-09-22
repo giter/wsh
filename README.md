@@ -1,7 +1,9 @@
 <h1 align="center">wsh</h1>
 
 <p align="center">
-  A cross-platform SSH client with an AI-assisted terminal.<br/>
+  <strong>Next-gen cross-platform SSH client powered by AI & a local AST safety engine.</strong><br/>
+  Translate natural language into shell commands with CoT, auto error RCA,
+  and zero dangerous execution risk.<br/>
   English | <a href="README.zh-CN.md">中文</a>
 </p>
 
@@ -10,9 +12,11 @@
 </p>
 
 Available on Windows / macOS / Linux. Describe what you want in plain language:
-the AI drafts the command, runs it safely and explains the result — with
-visible chain-of-thought, error root-cause analysis and local blocking of
-dangerous commands, all right next to the terminal.
+wsh translates it into shell commands with a visible chain of thought (CoT),
+automatically runs root-cause analysis when something fails, and gates every
+execution behind a local AST safety engine — so dangerous commands never stand
+a chance. No cloud-side judgement calls about your servers: the safety verdict
+happens on your machine.
 
 ## Features
 

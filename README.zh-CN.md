@@ -1,7 +1,9 @@
 <h1 align="center">wsh</h1>
 
 <p align="center">
-  跨平台的 AI 智能 SSH 终端。<br/>
+  <strong>下一代跨平台 SSH 客户端：AI 驱动，本地 AST 安全引擎护航。</strong><br/>
+  自然语言直达 Shell 命令：思维链（CoT）可视化、报错自动根因分析（RCA）、
+  危险执行零风险。<br/>
   <a href="README.md">English</a> | 中文
 </p>
 
@@ -9,8 +11,9 @@
   <img src="docs/screenshot.png" alt="wsh 主窗口" width="960" />
 </p>
 
-支持 Windows / macOS / Linux。用自然语言描述意图，AI 生成命令、安全执行、解读结果：
-思维链可视化、报错根因分析、危险命令本地拦截，全部在终端旁边完成。
+支持 Windows / macOS / Linux。用自然语言描述意图，wsh 把它翻译成 Shell 命令：
+思维链全程可见，出错自动根因分析（RCA），每一条命令都先经本地 AST 安全引擎
+判定后才执行——危险命令没有机会落地。安全判定在你的机器上完成，不依赖云端。
 
 ## 功能
 
