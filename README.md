@@ -1,7 +1,7 @@
 <h1 align="center">wsh</h1>
 
 <p align="center">
-  A cross-platform SSH client built with Go + Web.<br/>
+  A cross-platform SSH client with an AI-assisted terminal.<br/>
   English | <a href="README.zh-CN.md">中文</a>
 </p>
 
@@ -9,13 +9,22 @@
   <img src="docs/screenshot.png" alt="wsh main window" width="960" />
 </p>
 
+Available on Windows / macOS / Linux. Describe what you want in plain language:
+the AI drafts the command, runs it safely and explains the result — with
+visible chain-of-thought, error root-cause analysis and local blocking of
+dangerous commands, all right next to the terminal.
+
 ## Features
 
+- **Cross-platform** — native desktop app on Windows, macOS and Linux
+- **AI + terminal** — describe what you want in plain language and get a safe
+  command to run: intent analysis, command generation, execution and result
+  interpretation in one loop, guarded by a local safety engine
 - **Session manager** — docked side panel with a folder/connection tree and a
   properties pane; connections can be dragged into/out of folders and reordered
 - **Multi-tab terminals** — xterm.js rendering with automatic PTY resize; tabs
   are renameable and quick-connect sessions can be saved as connections
-- **快速连接** — type `ssh://user@host:port` in the address bar and hit
+- **Quick connect** — type `ssh://user@host:port` in the address bar and hit
   Enter for a temporary session, or save it as a connection
 - **Jump-host chains** — a connection can route through multiple bastion hosts
   (`local → jump A → jump B → target`); loops or missing hops fail before dialing
